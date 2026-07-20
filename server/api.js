@@ -115,7 +115,9 @@ const SETTING_KEYS = {
 
 // key -> [min, max] for integer settings; strings pass through.
 const INT_RANGE = {
-    scan_interval_s: [5, 86400], raise_scans: [1, 50], clear_scans: [1, 50],
+    // Feed data only changes at SNMPCanvas's poll cadence (its own minimum is
+    // 30 s), so scanning faster than 30 s just re-reads an unchanged file.
+    scan_interval_s: [30, 86400], raise_scans: [1, 50], clear_scans: [1, 50],
     stale_after_s: [0, 7 * 86400], missing_scans_to_clear: [1, 1000],
     renotify_interval_s: [0, 30 * 86400], retention_days: [1, 3650],
     smtp_port: [1, 65535], syslog_port: [1, 65535], syslog_facility: [0, 23],

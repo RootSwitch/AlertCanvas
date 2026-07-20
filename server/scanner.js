@@ -301,14 +301,14 @@ function prunePass(now) {
 
 function schedule() {
     clearInterval(timer);
-    const interval = Math.max(5, intSetting('scan_interval_s', 30));
+    const interval = Math.max(30, intSetting('scan_interval_s', 30));
     timer = setInterval(() => { tick(); }, interval * 1000);
 }
 
 function start() {
     schedule();
     tick();
-    log(`watching ${getSetting('status_file')} every ${Math.max(5, intSetting('scan_interval_s', 30))}s`);
+    log(`watching ${getSetting('status_file')} every ${Math.max(30, intSetting('scan_interval_s', 30))}s`);
 }
 
 function stop() { clearInterval(timer); timer = null; }
@@ -328,7 +328,7 @@ function getStatus() {
         feed: lastScan.feed,
         counts,
         emailError: notify.getLastEmailError(),
-        scanIntervalS: Math.max(5, intSetting('scan_interval_s', 30))
+        scanIntervalS: Math.max(30, intSetting('scan_interval_s', 30))
     };
 }
 

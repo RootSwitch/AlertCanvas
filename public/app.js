@@ -336,7 +336,7 @@
             <h2>Feed and scanning</h2>
             <div class="form-grid">
                 <label>Status file path</label><input type="text" id="set-statusFile" value="${esc(s.statusFile)}">
-                <label>Scan interval (s)</label><input type="number" id="set-scanIntervalS" value="${s.scanIntervalS}" min="5">
+                <label>Scan interval (s)</label><input type="number" id="set-scanIntervalS" value="${s.scanIntervalS}" min="30">
                 <label>Scans to raise</label><input type="number" id="set-raiseScans" value="${s.raiseScans}" min="1" max="50" title="Consecutive breaching scans before an alarm raises">
                 <label>Scans to clear</label><input type="number" id="set-clearScans" value="${s.clearScans}" min="1" max="50" title="Consecutive normal scans before an alarm clears">
                 <label>Stale after (s)</label><input type="number" id="set-staleAfterS" value="${s.staleAfterS}" min="0" title="0 = automatic: 3x the feed's own poll interval, at least 120s">
