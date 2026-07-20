@@ -1,0 +1,48 @@
+# Cap container logs so an unattended box can't slowly fill its disk - Docker's
+# default json-file driver never rotates. 10 MB x 5 = 50 MB. (Mirrors the rest
+# of the Canvas suite.)
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  alertcanvas:
+    build: .
+    image: alertcanvas
+    container_name: alertcanvas
+    # Default port 9162 ("162" for SNMP traps - fitting for the suite's
+    # alerting app). Stays clear of UptimeKuma (3001), CrossCanvas/PingCanvas
+    # (8080/8443), SNMPCanvas (9161) and SyslogCanvas (9514) on a shared host.
+    ports:
+      - "9162:9162"
+    volumes:
+      # Everything persistent lives here ON THE HOST: the SQLite database and
+      # TLS certs (data/certs/). Create it writable by the container user:
+      #   mkdir -p data && sudo chown 1000:1000 data
+      # The :z suffix labels the mount for SELinux hosts (RHEL/Rocky/Fedora);
+      # it's a no-op elsewhere.
+      - ./data:/data:z
+      # The feed: a READ-ONLY view of the directory where SNMPCanvas writes
+      # snmp-status.json. Point the left side at YOUR snmpcanvas data dir
+      # (its compose mounts ./data:/data, so ../snmpcanvas/data on the same
+      # host is the usual answer). AlertCanvas reads
+      # /status/snmp-status.json by default (Settings -> status file path).
+      - ../snmpcanvas/data:/status:ro,z
+    environment:
+      # Timezone governs log timestamps
+      - TZ=Etc/UTC
+      # Optional: pre-set the admin password (otherwise the UI offers a
+      # first-run setup page)
+      #- ADMIN_PASSWORD=change-me
+      # Optional: encrypt the stored SMTP password at rest with this secret
+      #- ALERTCANVAS_SECRET=a-long-random-string
+      # Optional: read the feed from a different path inside the container
+      #- STATUS_FILE=/status/snmp-status.json
+    logging: *default-logging
+    restart: unless-stopped
+
+# HTTPS: run  ./tools/gen-cert.sh <hostname-or-ip>  once on the host (or drop
+# your own PEM pair at data/certs/server.crt + server.key), then
+# `docker compose restart`. The server switches to HTTPS automatically.

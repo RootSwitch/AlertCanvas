@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlertCanvas</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="topbar">
+    <span class="brand">
+        <span class="logo">
+            <!-- The family easel mark (CrossCanvas/PingCanvas/SNMPCanvas
+                 siblings), with a red exclamation on the canvas. Easel takes
+                 the theme accent via currentColor; the mark keeps alert red. -->
+            <svg width="22" height="22" viewBox="0 0 64 64" fill="none" stroke="currentColor">
+                <path d="M32 5 L32 12" stroke-width="5" stroke-linecap="round"/>
+                <path d="M18 45 L12 59 M46 45 L52 59 M32 45 L32 59" stroke-width="5" stroke-linecap="round"/>
+                <rect x="9" y="12" width="46" height="34" rx="3" fill="#f4f1ea" stroke-width="4"/>
+                <g fill="var(--se-down)" stroke="none">
+                    <rect x="28.5" y="17" width="7" height="16.5" rx="3.5"/>
+                    <circle cx="32" cy="40.5" r="3.6"/>
+                </g>
+            </svg>
+        </span>
+        <span class="brand-name">AlertCanvas</span>
+    </span>
+    <nav id="nav" style="display:none">
+        <a href="#/alarms" data-nav="alarms">Alarms</a>
+        <a href="#/history" data-nav="history">History</a>
+        <a href="#/settings" data-nav="settings">Settings</a>
+    </nav>
+    <span class="topbar-spacer"></span>
+    <select id="theme-select" title="Theme"></select>
+    <button id="logout-btn" style="display:none">Log out</button>
+</div>
+<div id="main"></div>
+<script src="themes.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

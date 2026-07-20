@@ -1,0 +1,27 @@
+{
+  "name": "alertcanvas",
+  "version": "0.1.0",
+  "description": "Lightweight self-hosted alerting for the Canvas suite: watch SNMPCanvas's snmp-status.json, evaluate thresholds, and raise/clear alerts by email and syslog.",
+  "license": "Unlicense",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RootSwitch/AlertCanvas.git"
+  },
+  "homepage": "https://github.com/RootSwitch/AlertCanvas",
+  "bugs": {
+    "url": "https://github.com/RootSwitch/AlertCanvas/issues"
+  },
+  "type": "commonjs",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "refresh-status": "node tools/refresh-status.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "nodemailer": "^7.0.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+data/
+.claude/
+
+# local reference checkouts of the sibling projects (not part of this repo)
+*-main/
+snmp-status.json
