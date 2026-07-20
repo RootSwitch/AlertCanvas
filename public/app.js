@@ -175,6 +175,12 @@
         const sub = raised.length === 0 ? 'no active alarms'
             : `${raised.length} active alarm${raised.length === 1 ? '' : 's'}`;
 
+        // Heartbeat: proof the scanner is looking, not just quiet.
+        const w = status.watching;
+        const heartbeat = `<span class="dot ${status.lastScanOk ? 'ok' : 'bad'}" title="${status.lastScanOk ? 'last scan succeeded' : 'last scan failed'}"></span>` +
+            (w ? `watching ${w.metrics} metric${w.metrics === 1 ? '' : 's'} + ${w.interfaces} interface${w.interfaces === 1 ? '' : 's'} - ` : '') +
+            `scan ${fmtAgo(status.lastScanTs)}${status.feed && status.feed.ageSec != null ? ` - feed ${status.feed.ageSec}s old` : ''}`;
+
         const rows = alerts.map((a) => `
             <tr class="${a.ackedTs ? 'acked' : ''}">
                 <td>${sevPill(a)}</td>
@@ -193,13 +199,14 @@
             <h1>Alarms</h1>
             <span class="sub">${sub}</span>
             <span class="spacer"></span>
-            <span class="sub">scan ${fmtAgo(status.lastScanTs)}${status.feed && status.feed.ageSec != null ? ` - feed ${status.feed.ageSec}s old` : ''}</span>
+            <span class="sub">${heartbeat}</span>
         </div>
         ${banners.join('')}
         ${alerts.length === 0 ? `
             <div class="panel"><div class="all-quiet">
                 <div class="big">All quiet</div>
-                <div>No active alarms. Last scan ${fmtAgo(status.lastScanTs)}, every ${status.scanIntervalS}s.</div>
+                <div>${w ? `Watching ${w.metrics} metrics and ${w.interfaces} interfaces across ${w.devices} devices (${w.rules} rules evaluated).` : 'No successful scan yet.'}</div>
+                <div class="muted small" style="margin-top:4px">Last scan ${fmtAgo(status.lastScanTs)}, every ${status.scanIntervalS}s${status.feed && status.feed.ageSec != null ? `; feed ${status.feed.ageSec}s old` : ''}.</div>
             </div></div>` : `
             <div class="panel"><table class="list">
                 <thead><tr><th>Severity</th><th>Alarm</th><th class="num">Value / limit</th>

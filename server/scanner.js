@@ -117,6 +117,21 @@ async function tick() {
         const missingScans = Math.max(1, intSetting('missing_scans_to_clear', 20));
 
         const conditions = feed.ok ? rules.evaluate(feed.doc, cfg) : [];
+        // Heartbeat for the UI: what the last successful scan actually saw,
+        // so "all quiet" is distinguishable from "not looking".
+        if (feed.ok) {
+            const devices = new Set();
+            for (const i of feed.doc.interfaces || []) devices.add((i.device && i.device.name) || i.id.split(':')[0]);
+            for (const m of feed.doc.metrics || []) devices.add(m.host);
+            lastScan.watching = {
+                metrics: (feed.doc.metrics || []).length,
+                interfaces: (feed.doc.interfaces || []).length,
+                devices: devices.size,
+                rules: conditions.length
+            };
+        } else {
+            lastScan.watching = null;
+        }
         conditions.push({
             key: 'watchdog:feed', severity: feed.ok ? null : 'crit', frozen: false,
             kind: 'watchdog', host: null, code: null,
@@ -326,6 +341,7 @@ function getStatus() {
         lastScanOk: lastScan.ok,
         lastScanError: lastScan.error,
         feed: lastScan.feed,
+        watching: lastScan.watching || null,
         counts,
         emailError: notify.getLastEmailError(),
         scanIntervalS: Math.max(30, intSetting('scan_interval_s', 30))
