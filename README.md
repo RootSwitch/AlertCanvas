@@ -22,8 +22,7 @@ The family's small-footprint ethos carries over: one container, one SQLite
 file, two runtime dependencies, and a frontend that is plain HTML/CSS/JS
 with no build step.
 
-<!-- hero image, once captured from a production instance:
-![Four AlertCanvas themes, four views: ...](docs/hero-quadrants.png) -->
+![Four AlertCanvas themes, four views - Alarms, Watching, History, and Settings - shown in the Slate, Parchment, Nocturne, and Sage themes](docs/hero-quadrants.png)
 
 ## How it works
 
