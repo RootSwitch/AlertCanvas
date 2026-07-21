@@ -140,6 +140,7 @@ const DEFAULTS = {
     stale_after_s: '0',            // 0 = auto: max(3 x feed pollIntervalSec, 120)
     missing_scans_to_clear: '20',
     renotify_interval_s: '0',      // 0 = off; else re-send raise for unacked active alerts
+    silence_until: '0',            // epoch s; while in the future, notifications are suppressed
     retention_days: '90',
     thresholds: JSON.stringify(DEFAULT_THRESHOLDS),
     if_rules: JSON.stringify(DEFAULT_IF_RULES),

@@ -34,28 +34,39 @@ function buildOverrideIndex(overrides) {
     return { byCode, byHostKind };
 }
 
-// Resolve the {warn, crit} pair for one leveled target. Returns null when the
-// target is muted or has no applicable rule.
-function resolveLevels(idx, defaults, code, host, kind) {
+// Resolve the {warn, crit} pair for one leveled target, remembering WHERE the
+// rule came from so the Watching page can show it. levels null = nothing to
+// evaluate (muted, disabled, or no rule).
+function resolveLevelsInfo(idx, defaults, code, host, kind) {
     const o = idx.byCode.get(`${code}|${kind}`) || idx.byHostKind.get(`${host}|${kind}`);
     if (o) {
-        if (!o.enabled) return null;
-        if (o.warn == null && o.crit == null) return null;
-        return { warn: o.warn, crit: o.crit };
+        const source = o.scope === 'code' ? 'override' : 'host override';
+        if (!o.enabled) return { levels: null, source, muted: true };
+        if (o.warn == null && o.crit == null) return { levels: null, source, muted: false };
+        return { levels: { warn: o.warn, crit: o.crit }, source, muted: false };
     }
-    if (!defaults || (defaults.warn == null && defaults.crit == null)) return null;
-    return { warn: defaults.warn ?? null, crit: defaults.crit ?? null };
+    if (!defaults || (defaults.warn == null && defaults.crit == null)) {
+        return { levels: null, source: 'none', muted: false };
+    }
+    return { levels: { warn: defaults.warn ?? null, crit: defaults.crit ?? null }, source: 'default', muted: false };
+}
+function resolveLevels(idx, defaults, code, host, kind) {
+    return resolveLevelsInfo(idx, defaults, code, host, kind).levels;
 }
 
-// Resolve a boolean rule (if-down, device-down): {severity} or null when muted.
-function resolveBool(idx, defaults, code, host, kind) {
+// Resolve a boolean rule (if-down, device-down) the same way.
+function resolveBoolInfo(idx, defaults, code, host, kind) {
     const o = idx.byCode.get(`${code}|${kind}`) || idx.byHostKind.get(`${host}|${kind}`);
     if (o) {
-        if (!o.enabled) return null;
-        return { severity: o.severity || (defaults && defaults.severity) || 'crit' };
+        const source = o.scope === 'code' ? 'override' : 'host override';
+        if (!o.enabled) return { rule: null, source, muted: true };
+        return { rule: { severity: o.severity || (defaults && defaults.severity) || 'crit' }, source, muted: false };
     }
-    if (!defaults || !defaults.enabled) return null;
-    return { severity: defaults.severity || 'crit' };
+    if (!defaults || !defaults.enabled) return { rule: null, source: 'none', muted: false };
+    return { rule: { severity: defaults.severity || 'crit' }, source: 'default', muted: false };
+}
+function resolveBool(idx, defaults, code, host, kind) {
+    return resolveBoolInfo(idx, defaults, code, host, kind).rule;
 }
 
 function levelSeverity(kind, value, levels) {
@@ -198,4 +209,81 @@ function evaluate(doc, config) {
 
 function round2(v) { return Math.round(v * 100) / 100; }
 
-module.exports = { evaluate, LOWER_IS_BAD, METRIC_KINDS };
+// The Watching view: for every value in the feed, what rule (if any) applies,
+// where it came from, and how the current reading scores against it. Pure,
+// like evaluate() - same inputs, but explanation instead of conditions.
+function explain(doc, config) {
+    const idx = buildOverrideIndex(config.overrides);
+
+    const metrics = (doc.metrics || []).map((m) => {
+        const known = METRIC_KINDS.includes(m.kind);
+        const info = known
+            ? resolveLevelsInfo(idx, config.thresholds[m.kind], m.code, m.host, m.kind)
+            : { levels: null, source: 'none', muted: false };
+        const numeric = m.value != null && Number.isFinite(Number(m.value));
+        let current = null;
+        if (info.levels) {
+            current = numeric ? (levelSeverity(m.kind, Number(m.value), info.levels)[0] || 'ok') : 'no-data';
+        }
+        return {
+            code: m.code, kind: m.kind, host: m.host, display: m.display,
+            value: numeric ? round2(Number(m.value)) : null, unit: m.unit || '',
+            lowerIsBad: LOWER_IS_BAD.has(m.kind),
+            rule: info.levels, source: info.source, muted: info.muted, current
+        };
+    });
+
+    const deviceSeen = new Set();
+    const devices = [];
+    const interfaces = [];
+    for (const i of doc.interfaces || []) {
+        const dev = (i.device && i.device.name) || i.id.split(':')[0];
+
+        if (!deviceSeen.has(dev)) {
+            deviceSeen.add(dev);
+            const info = resolveBoolInfo(idx, config.deviceDown, null, dev, 'device-down');
+            devices.push({
+                host: dev, ip: (i.device && i.device.host) || null,
+                status: (i.device && i.device.status) || 'unknown',
+                rule: info.rule, source: info.source, muted: info.muted
+            });
+        }
+
+        const down = resolveBoolInfo(idx, config.ifRules.down, i.code, dev, 'if-down');
+        const level = (aspect, kind, worst, pct) => {
+            const info = resolveLevelsInfo(idx, config.ifRules[aspect], i.code, dev, kind);
+            const value = pct !== undefined ? pct : worst;
+            let current = null;
+            if (info.levels) {
+                current = value == null ? 'no-data' : (levelSeverity(kind, value, info.levels)[0] || 'ok');
+            }
+            return {
+                rule: info.levels, source: info.source, muted: info.muted,
+                value: value == null ? null : round2(value), current
+            };
+        };
+        const worstOrNull = (a, b) => (a == null && b == null) ? null : Math.max(a ?? -1, b ?? -1);
+        const worstBps = worstOrNull(i.inBps, i.outBps);
+        interfaces.push({
+            code: i.code, id: i.id, host: dev, name: i.name, alias: i.alias || '',
+            operStatus: i.operStatus, adminStatus: i.adminStatus,
+            deviceStatus: (i.device && i.device.status) || 'unknown',
+            down: {
+                rule: down.rule, source: down.source, muted: down.muted,
+                current: down.rule
+                    ? (i.operStatus === 'unknown' ? 'no-data'
+                        : (i.adminStatus === 'up' && i.operStatus !== 'up') ? 'alarm' : 'ok')
+                    : null
+            },
+            errors: level('errors', 'if-errors', worstOrNull(i.inErrorsPerSec, i.outErrorsPerSec)),
+            discards: level('discards', 'if-discards', worstOrNull(i.inDiscardsPerSec, i.outDiscardsPerSec)),
+            util: i.speedBps > 0
+                ? level('util', 'if-util', null, worstBps == null ? undefined : (worstBps * 100) / i.speedBps)
+                : { rule: null, source: 'none', muted: false, value: null, current: null }
+        });
+    }
+
+    return { metrics, interfaces, devices };
+}
+
+module.exports = { evaluate, explain, LOWER_IS_BAD, METRIC_KINDS };

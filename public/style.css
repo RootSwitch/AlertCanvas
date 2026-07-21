@@ -255,6 +255,10 @@ tr.acked td { opacity: 0.55; }
 .dot.ok { background: var(--se-up); }
 .dot.bad { background: var(--se-down); }
 
+/* Watching page: aspect cells tinted by the current reading */
+.cell-warn { color: var(--se-warn); font-weight: 600; }
+.cell-crit { color: var(--se-down); font-weight: 600; }
+
 .badge {
     display: inline-block;
     font-size: 11px;

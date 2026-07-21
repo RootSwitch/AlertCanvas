@@ -65,6 +65,41 @@
         refreshTimer = fn ? setInterval(fn, ms) : null;
     }
 
+    // ===== browser tab as status light =====
+    // Title carries the raised-alarm count; the favicon's canvas gets a
+    // warn/crit wash (the PingCanvas red-wash language) so a pinned tab reads
+    // at a glance. Runs on its own poller so it works from any view.
+    const $favicon = document.querySelector('link[rel="icon"]');
+    const favWash = (color, opacity) => 'data:image/svg+xml,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+        '<rect width="64" height="64" rx="12" fill="#262a33"/>' +
+        '<path d="M32 5 L32 12" stroke="#a89e8f" stroke-width="4" stroke-linecap="round"/>' +
+        '<path d="M18 45 L12 59 M46 45 L52 59 M32 45 L32 59" stroke="#a89e8f" stroke-width="4" stroke-linecap="round" fill="none"/>' +
+        `<rect x="9" y="12" width="46" height="34" rx="3" fill="${color}" fill-opacity="${opacity}" stroke="#a89e8f" stroke-width="3"/>` +
+        '<g fill="#d64545"><rect x="28.5" y="17" width="7" height="16.5" rx="3.5"/><circle cx="32" cy="40.5" r="3.6"/></g></svg>');
+    const FAVICONS = {
+        quiet: 'favicon.svg',
+        warn: favWash('#e8c56a', 1),
+        crit: favWash('#e88585', 1)
+    };
+    function setTabState(raised, worst) {
+        document.title = raised > 0 ? `(${raised}) AlertCanvas` : 'AlertCanvas';
+        const want = raised > 0 ? FAVICONS[worst] || FAVICONS.warn : FAVICONS.quiet;
+        if ($favicon.getAttribute('href') !== want) $favicon.setAttribute('href', want);
+    }
+    async function pollTabState() {
+        // Raw fetch: the api() helper bounces to the login view on 401, which
+        // a background poller must never do.
+        try {
+            const res = await fetch('/api/status');
+            if (!res.ok) return;
+            const s = await res.json();
+            setTabState((s.counts.active || 0) + (s.counts.clearing || 0), s.worstActive);
+        } catch (_) { /* server briefly away - keep last state */ }
+    }
+    setInterval(pollTabState, 15000);
+    pollTabState();
+
     function setNav(active, visible) {
         $nav.style.display = visible ? '' : 'none';
         $logout.style.display = visible ? '' : 'none';
@@ -106,6 +141,7 @@
         if (!session.authenticated) { renderLogin(session.needsSetup); return; }
 
         const hash = location.hash || '#/alarms';
+        if (hash.startsWith('#/watching')) return renderWatching();
         if (hash.startsWith('#/history')) return renderHistory();
         if (hash.startsWith('#/settings')) return renderSettings();
         return renderAlarms();
@@ -163,7 +199,12 @@
             [status, { alerts }] = await Promise.all([GET('/api/status'), GET('/api/alerts')]);
         } catch (e) { return; }
 
+        setTabState((status.counts.active || 0) + (status.counts.clearing || 0), status.worstActive);
+
         const banners = [];
+        if (status.silenceUntil) {
+            banners.push(`<div class="banner warn"><b>Notifications silenced</b> until ${fmtTs(status.silenceUntil)} - alarms still track, nothing is sent. <button id="silence-off" style="margin-left:8px">Resume now</button></div>`);
+        }
         if (!status.lastScanOk && status.lastScanError) {
             banners.push(`<div class="banner"><b>Feed problem:</b> <span class="detail">${esc(status.lastScanError)}</span></div>`);
         }
@@ -200,6 +241,13 @@
             <span class="sub">${sub}</span>
             <span class="spacer"></span>
             <span class="sub">${heartbeat}</span>
+            ${status.silenceUntil ? '' : `<select id="silence-sel" title="Suppress notifications for planned maintenance; alarms keep tracking">
+                <option value="">Silence...</option>
+                <option value="60">1 hour</option>
+                <option value="240">4 hours</option>
+                <option value="1440">24 hours</option>
+                <option value="10080">7 days</option>
+            </select>`}
         </div>
         ${banners.join('')}
         ${alerts.length === 0 ? `
@@ -220,7 +268,136 @@
                 renderAlarms();
             });
         }
+        const $silence = document.getElementById('silence-sel');
+        if ($silence) {
+            $silence.addEventListener('change', async () => {
+                if (!$silence.value) return;
+                await api('POST', '/api/silence', { minutes: parseInt($silence.value, 10) });
+                renderAlarms();
+            });
+        }
+        const $silenceOff = document.getElementById('silence-off');
+        if ($silenceOff) {
+            $silenceOff.addEventListener('click', async () => {
+                await api('POST', '/api/silence', { minutes: 0 });
+                renderAlarms();
+            });
+        }
         setAutoRefresh(renderAlarms, 10000);
+    }
+
+    // ===== watching =====
+    // The dry-run view: every value in the feed, the rule that would fire on
+    // it (and where that rule came from), and how the current reading scores.
+    function ruleText(rule, unit, lowerIsBad, source, muted) {
+        if (muted) return '<span class="muted">muted</span>';
+        if (!rule) return '<span class="muted">no rule</span>';
+        const dir = lowerIsBad ? '<=' : '>=';
+        const parts = [];
+        if (rule.warn != null) parts.push(`warn ${dir} ${rule.warn}${unit}`);
+        if (rule.crit != null) parts.push(`crit ${dir} ${rule.crit}${unit}`);
+        return esc(parts.join(', ')) +
+            (source !== 'default' ? ` <span class="muted small">(${esc(source)})</span>` : '');
+    }
+    function stateBadge(current, muted) {
+        if (muted) return '<span class="badge">muted</span>';
+        if (current === null) return '<span class="badge">not alerted</span>';
+        if (current === 'no-data') return '<span class="badge">no data</span>';
+        if (current === 'ok') return '<span class="badge ok">ok</span>';
+        if (current === 'alarm' || current === 'crit') return '<span class="sev crit">crit</span>';
+        return '<span class="sev warn">warn</span>';
+    }
+    // Compact cell for one interface aspect: the rule levels, tinted by the
+    // current reading; title carries the detail.
+    function aspectCell(a, unit) {
+        if (a.muted) return '<td class="muted small">muted</td>';
+        if (!a.rule) return '<td class="muted small">off</td>';
+        const text = `${a.rule.warn ?? '-'} / ${a.rule.crit ?? '-'}${unit}`;
+        const cls = a.current === 'crit' || a.current === 'alarm' ? 'cell-crit'
+            : a.current === 'warn' ? 'cell-warn' : '';
+        const now = a.value != null ? `now ${a.value}${unit}` : 'no reading';
+        const src = a.source !== 'default' ? `, ${a.source}` : '';
+        return `<td class="num small ${cls}" title="${esc(now + src)}">${esc(text)}</td>`;
+    }
+
+    async function renderWatching() {
+        setNav('watching', true);
+        const [w, status] = await Promise.all([GET('/api/watching'), GET('/api/status')]);
+
+        if (!w.available) {
+            $main.innerHTML = `<div class="page-head"><h1>Watching</h1></div>
+            <div class="panel"><div class="muted">No feed read yet${status.lastScanError ? ` - ${esc(status.lastScanError)}` : ''}.</div></div>`;
+            return;
+        }
+
+        const metricRows = w.metrics
+            .slice().sort((a, b) => a.host.localeCompare(b.host) || a.kind.localeCompare(b.kind))
+            .map((m) => `
+            <tr>
+                <td>${esc(m.host)}</td>
+                <td>${esc(m.display)} <span class="code-chip">${esc(m.code)}</span></td>
+                <td class="hide-sm">${esc(m.kind)}</td>
+                <td>${ruleText(m.rule, m.unit, m.lowerIsBad, m.source, m.muted)}</td>
+                <td>${stateBadge(m.current, m.muted)}</td>
+            </tr>`).join('');
+
+        const ifRows = w.interfaces
+            .slice().sort((a, b) => a.host.localeCompare(b.host) || a.name.localeCompare(b.name))
+            .map((i) => {
+                const linkCls = i.down.current === 'alarm' ? 'cell-crit' : '';
+                const link = i.down.muted ? '<span class="muted small">muted</span>'
+                    : !i.down.rule ? '<span class="muted small">off</span>'
+                    : `${esc(i.down.rule.severity)}${i.down.source !== 'default' ? ` <span class="muted small">(${esc(i.down.source)})</span>` : ''}`;
+                return `
+            <tr>
+                <td>${esc(i.host)}</td>
+                <td>${esc(i.name)}${i.alias ? ` <span class="muted">(${esc(i.alias)})</span>` : ''} <span class="code-chip">${esc(i.code)}</span></td>
+                <td class="${linkCls}" title="oper ${esc(i.operStatus)}, admin ${esc(i.adminStatus)}">${link}</td>
+                ${aspectCell(i.errors, 'pps')}
+                ${aspectCell(i.discards, 'pps')}
+                ${aspectCell(i.util, '%')}
+                <td>${stateBadge(i.down.current === 'alarm' ? 'alarm'
+                    : [i.errors, i.discards, i.util].some((a) => a.current === 'crit') ? 'crit'
+                    : [i.errors, i.discards, i.util].some((a) => a.current === 'warn') ? 'warn'
+                    : i.down.current, i.down.muted)}</td>
+            </tr>`;
+            }).join('');
+
+        const devSummary = (() => {
+            const on = w.devices.filter((d) => d.rule && !d.muted);
+            const muted = w.devices.filter((d) => d.muted);
+            let s = on.length
+                ? `Device down alarms ${esc(on[0].rule.severity)} on ${on.length} device${on.length === 1 ? '' : 's'}`
+                : 'Device-down alerting is off';
+            if (muted.length) s += `; muted for ${muted.map((d) => esc(d.host)).join(', ')}`;
+            return s;
+        })();
+
+        $main.innerHTML = `
+        <div class="page-head">
+            <h1>Watching</h1>
+            <span class="sub">${w.metrics.length} metrics, ${w.interfaces.length} interfaces, ${w.devices.length} devices</span>
+            <span class="spacer"></span>
+            <span class="sub">feed generated ${w.generatedAt ? fmtAgo(Math.floor(Date.parse(w.generatedAt) / 1000)) : '-'}</span>
+        </div>
+        <div class="panel">
+            <h2>Host metrics</h2>
+            ${w.metrics.length === 0 ? '<div class="muted">The feed carries no metrics.</div>' : `
+            <table class="list">
+                <thead><tr><th>Host</th><th>Value</th><th class="hide-sm">Kind</th><th>Effective rule</th><th>State</th></tr></thead>
+                <tbody>${metricRows}</tbody>
+            </table>`}
+        </div>
+        <div class="panel">
+            <h2>Interfaces</h2>
+            <div class="section-note">${devSummary}. Stale-feed watchdog raises after ${status.feed && status.feed.staleAfterS ? status.feed.staleAfterS + 's' : 'the configured window'} without a fresh feed. Warn / crit cells; hover for the current reading.</div>
+            ${w.interfaces.length === 0 ? '<div class="muted">The feed carries no interfaces.</div>' : `
+            <table class="list">
+                <thead><tr><th>Device</th><th>Interface</th><th>Link</th><th class="num">Errors</th><th class="num">Discards</th><th class="num">Util</th><th>State</th></tr></thead>
+                <tbody>${ifRows}</tbody>
+            </table>`}
+        </div>`;
+        setAutoRefresh(renderWatching, 30000);
     }
 
     // ===== history =====

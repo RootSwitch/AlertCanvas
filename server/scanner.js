@@ -336,7 +336,13 @@ function getStatus() {
     for (const r of db.prepare("SELECT state, COUNT(*) AS n FROM alerts WHERE state != 'cleared' GROUP BY state").all()) {
         counts[r.state] = r.n;
     }
+    const raised = counts.active + counts.clearing;
+    const crits = raised === 0 ? 0 : db.prepare(
+        "SELECT COUNT(*) AS n FROM alerts WHERE state IN ('active','clearing') AND severity = 'crit'").get().n;
+    const silenceUntil = parseInt(getSetting('silence_until'), 10) || 0;
     return {
+        worstActive: crits > 0 ? 'crit' : raised > 0 ? 'warn' : null,
+        silenceUntil: silenceUntil > nowS() ? silenceUntil : 0,
         lastScanTs: lastScan.ts,
         lastScanOk: lastScan.ok,
         lastScanError: lastScan.error,
@@ -350,4 +356,4 @@ function getStatus() {
 
 function getSnapshot() { return lastDoc; }
 
-module.exports = { start, stop, restart, tick, getStatus, getSnapshot };
+module.exports = { start, stop, restart, tick, getStatus, getSnapshot, getConfig: readConfig };

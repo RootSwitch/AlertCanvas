@@ -186,6 +186,25 @@ const routes = [
         ok(res, { alerts: rows.map(alertSummary) });
     } },
 
+    // Maintenance silence: alarms keep tracking, notifications are suppressed
+    // until the timestamp passes. Bounded at 7 days on purpose - an alerting
+    // tool that can be silenced forever eventually is, by accident.
+    { method: 'POST', path: /^\/api\/silence$/, handler: (req, res, p, body) => {
+        const m = parseInt(body.minutes, 10);
+        if (!Number.isFinite(m) || m < 0 || m > 10080) return bad(res, 'minutes must be 0 (resume) to 10080 (7 days).');
+        setSetting('silence_until', m === 0 ? '0' : String(Math.floor(Date.now() / 1000) + m * 60));
+        ok(res, { silenceUntil: parseInt(getSetting('silence_until'), 10) || 0 });
+    } },
+
+    // The Watching view: every value in the feed with its effective rule and
+    // how the current reading scores against it.
+    { method: 'GET', path: /^\/api\/watching$/, handler: (req, res) => {
+        const doc = scanner.getSnapshot();
+        if (!doc) return ok(res, { available: false, metrics: [], interfaces: [], devices: [] });
+        const ex = rules.explain(doc, scanner.getConfig());
+        ok(res, { available: true, generatedAt: doc.generatedAt || null, ...ex });
+    } },
+
     { method: 'POST', path: /^\/api\/alerts\/(\d+)\/ack$/, handler: (req, res, params) => {
         const r = db.prepare("UPDATE alerts SET acked_ts = ? WHERE id = ? AND state != 'cleared'")
             .run(Math.floor(Date.now() / 1000), parseInt(params[0], 10));

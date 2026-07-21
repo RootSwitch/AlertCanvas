@@ -20,6 +20,14 @@ threshold for each kind, and a notification when one crosses.
   [SyslogCanvas](https://github.com/RootSwitch/SyslogCanvas) or any receiver,
   with structured data carrying host/kind/severity/code
 - **Stale-feed watchdog** - if SNMPCanvas stops writing, that is itself an alarm
+- **Watching page** - every exported value with the rule that applies to it
+  (and where it came from: default, override, or muted), so misconfiguration
+  is visible instead of silent
+- **Maintenance silence** - suppress notifications for 1h to 7d while alarms
+  keep tracking; suppressed sends are logged, and the window can't be forgotten
+  because it is bounded
+- **Status in the browser tab** - the title shows the raised-alarm count and
+  the favicon's canvas washes amber/red, so a pinned tab reads at a glance
 - **Single shared password** (scrypt), sessions in SQLite, automatic HTTPS
   when a certificate is present
 - The Canvas family look: same themes as CrossCanvas, same easel - with a red
@@ -141,6 +149,7 @@ client IPs.
 
 ```sh
 npm install
+npm test                # rules-engine unit tests (tools/test-rules.js)
 STATUS_FILE=./sample/snmp-status.json node server/server.js
 # or on Windows PowerShell:
 #   $env:STATUS_FILE = 'C:\path\to\snmp-status.json'; node server/server.js

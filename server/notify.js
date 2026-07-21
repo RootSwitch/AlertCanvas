@@ -25,6 +25,18 @@ function getLastEmailError() { return lastEmailError; }
 // the email was delivered OR email is disabled (nothing owed). Syslog is UDP
 // fire-and-forget and never gates alert bookkeeping.
 async function dispatch(event, alert) {
+    // Maintenance silence: alarms still track and display; nothing is sent.
+    // Logged as suppressed (not failed) so history explains the quiet inbox,
+    // and emailOk=true so nothing queues up to fire when the window ends.
+    const silenceUntil = parseInt(getSetting('silence_until'), 10) || 0;
+    if (silenceUntil > Math.floor(Date.now() / 1000)) {
+        const detail = `suppressed - silenced until ${new Date(silenceUntil * 1000).toISOString()}`;
+        if (getSetting('email_enabled') === '1') record(alert.id, 'email', event, true, detail);
+        if (getSetting('syslog_enabled') === '1') record(alert.id, 'syslog', event, true, detail);
+        log(`${event} ${alert.severity} ${alert.alert_key} - ${alert.label} (silenced)`);
+        return { emailOk: true };
+    }
+
     const isClear = event === 'clear';
     const vars = templates.varsFor(alert, event);
 
