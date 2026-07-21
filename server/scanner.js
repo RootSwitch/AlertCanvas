@@ -211,8 +211,15 @@ async function tick() {
                         }
                         continue;
                     }
+                    // Severity is STICKY at the worst level once an alert has
+                    // been raised: a bouncy metric straddling the crit line
+                    // must not downgrade-then-"escalate" on every wobble (one
+                    // GPU inference run = one escalate, not one per scan).
+                    // History then records the incident's true worst. Pending
+                    // alerts still track the live severity - nothing has been
+                    // sent yet, so raising at the current level is honest.
                     const wasSeverity = row.severity;
-                    row.severity = c.severity;
+                    row.severity = (row.state !== 'pending' && wasSeverity === 'crit') ? 'crit' : c.severity;
                     row.label = c.label;
                     row.value = c.value;
                     row.peak_value = peak(c.kind, row.peak_value, c.value);

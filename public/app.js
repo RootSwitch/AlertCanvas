@@ -444,7 +444,7 @@
             <tr>
                 <td><span class="sev ${a.severity === 'crit' ? 'crit' : 'warn'}">${esc(a.severity)}</span></td>
                 <td>${esc(a.label)}${codeChip(a.code)}</td>
-                <td class="num hide-sm" title="worst value seen">${fmtValue(a.peakValue, a.unit)}</td>
+                <td class="num hide-sm" title="worst value seen vs the limit it crossed">${fmtValue(a.peakValue, a.unit)}${a.threshold != null ? ` <span class="muted">/ ${fmtValue(a.threshold, a.unit)}</span>` : ''}</td>
                 <td>${fmtTs(a.raisedTs)}</td>
                 <td>${fmtTs(a.clearedTs)}</td>
                 <td class="num">${fmtDuration((a.clearedTs || 0) - (a.raisedTs || a.firstBreachTs))}</td>
@@ -470,7 +470,7 @@
         <div class="panel">
             ${alerts.length === 0 ? '<div class="muted">Nothing yet - cleared alarms land here.</div>' : `
             <table class="list">
-                <thead><tr><th>Severity</th><th>Alarm</th><th class="num hide-sm">Peak</th>
+                <thead><tr><th>Severity</th><th>Alarm</th><th class="num hide-sm">Peak / limit</th>
                     <th>Raised</th><th>Cleared</th><th class="num">Duration</th><th class="hide-sm">Reason</th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>`}

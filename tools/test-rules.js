@@ -178,10 +178,26 @@ test('device-down rule can be muted per host', () => {
 });
 
 // --- labels ---
-test('metric label keeps the multi-word display name', () => {
+test('metric label keeps the multi-word display name and appends the kind', () => {
     const c = byKey(evalOne({ metrics: [metric({ kind: 'util', display: 'UPS1-Load 85%', value: 85, host: 'MPC1',
         code: 'M1' })] }, config({ thresholds: { util: { warn: 70, crit: 90 } } })), 'metric:M1');
-    assert.strictEqual(c.label, 'MPC1 UPS1-Load');
+    assert.strictEqual(c.label, 'MPC1 UPS1-Load (util)');
+});
+test('label appends the kind when the name does not say it (GPU-1 GPU)', () => {
+    const c = byKey(evalOne({ metrics: [metric({ kind: 'util', display: 'GPU 90%', value: 91, host: 'GPU-1',
+        code: 'M1' })] }, config({ thresholds: { util: { warn: 70, crit: 90 } } })), 'metric:M1');
+    assert.strictEqual(c.label, 'GPU-1 GPU (util)');
+});
+test('label skips the kind when redundant (CPU/cpu, Batt/battery, Temp/temp)', () => {
+    const cases = [
+        [{ kind: 'cpu', display: 'CPU 90%', value: 90 }, 'h1 CPU'],
+        [{ kind: 'battery', display: 'Batt 10%', value: 10 }, 'h1 Batt'],
+        [{ kind: 'temp', display: 'Temp 60C', value: 60, unit: 'C' }, 'h1 Temp']
+    ];
+    for (const [over, expected] of cases) {
+        const c = byKey(evalOne({ metrics: [metric(over)] }), 'metric:M1');
+        assert.strictEqual(c.label, expected);
+    }
 });
 test('interface label includes device, name and alias', () => {
     const c = byKey(evalOne({ interfaces: [iface({ alias: 'Uplink', operStatus: 'down' })] }), 'if:I1:down');

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Severity is sticky at the worst level while an alarm is open: a metric
+  bouncing across the crit line escalates ONCE per incident instead of on
+  every wobble, and History records the incident's true worst severity
+- Metric labels append the rule kind when the name doesn't say it
+  ("GPU-1 GPU (util)"), in the UI, emails, and syslog alike
+- History shows the crossed limit next to the peak value
+- Compose sets a stable container hostname so syslog's HOSTNAME field reads
+  "alertcanvas" instead of a container id
+- Scan-interval floor raised to 30 s (matches SNMPCanvas); Alarms-page
+  heartbeat, browser-tab status light, maintenance silence, Watching page,
+  ntfy push channel, reboot detection, full-pipeline test alarm,
+  /api/health?alarms=1 for Uptime Kuma, database backup download,
+  click-to-copy {CODE} chips, rules test suite + charcheck
+
 ## 0.1.0 - 2026-07-20
 
 Initial release.

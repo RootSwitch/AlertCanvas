@@ -90,6 +90,17 @@ function metricName(m) {
     return m.kind;
 }
 
+// Full label: "<host> <name>", plus the rule kind when the name doesn't
+// already say it - "GPU-1 GPU (util)" tells you WHICH threshold bucket
+// fired, where a bare "GPU-1 GPU" reads as noise. Skipped when redundant
+// ("CPU"/cpu, "Batt"/battery, "Temp"/temp).
+function metricLabel(m) {
+    const name = metricName(m);
+    const n = name.toLowerCase(), k = String(m.kind).toLowerCase();
+    const redundant = n.startsWith(k) || k.startsWith(n);
+    return `${m.host} ${name}${redundant ? '' : ` (${m.kind})`}`;
+}
+
 function ifLabel(i) {
     const dev = (i.device && i.device.name) || i.id.split(':')[0];
     return `${dev} ${i.name}${i.alias ? ` (${i.alias})` : ''}`;
@@ -189,7 +200,7 @@ function evaluate(doc, config) {
             out.push({
                 key: `metric:${m.code}`, severity: null, frozen: true,
                 kind: m.kind, host: m.host, code: m.code,
-                label: `${m.host} ${metricName(m)}`,
+                label: metricLabel(m),
                 value: null, threshold: null, unit: m.unit || ''
             });
             continue;
@@ -199,7 +210,7 @@ function evaluate(doc, config) {
         out.push({
             key: `metric:${m.code}`, severity: sev, frozen,
             kind: m.kind, host: m.host, code: m.code,
-            label: `${m.host} ${metricName(m)}`,
+            label: metricLabel(m),
             value: frozen ? null : round2(Number(m.value)), threshold: thr, unit: m.unit || ''
         });
     }

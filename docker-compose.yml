@@ -12,6 +12,9 @@ services:
     build: .
     image: alertcanvas
     container_name: alertcanvas
+    # Outbound syslog stamps the container hostname into its HOSTNAME field -
+    # without this it's the random container id (e.g. "a405d785e4af").
+    hostname: alertcanvas
     # Default port 9162 ("162" for SNMP traps - fitting for the suite's
     # alerting app). Stays clear of UptimeKuma (3001), CrossCanvas/PingCanvas
     # (8080/8443), SNMPCanvas (9161) and SyslogCanvas (9514) on a shared host.
