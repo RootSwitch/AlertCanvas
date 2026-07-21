@@ -7,6 +7,7 @@ const { db, getSetting } = require('./db');
 const templates = require('./templates');
 const smtp = require('./smtp');
 const syslogOut = require('./syslog-out');
+const ntfy = require('./ntfy');
 
 function log(...args) { console.log(new Date().toISOString(), '[notify]', ...args); }
 
@@ -33,6 +34,7 @@ async function dispatch(event, alert) {
         const detail = `suppressed - silenced until ${new Date(silenceUntil * 1000).toISOString()}`;
         if (getSetting('email_enabled') === '1') record(alert.id, 'email', event, true, detail);
         if (getSetting('syslog_enabled') === '1') record(alert.id, 'syslog', event, true, detail);
+        if (getSetting('ntfy_enabled') === '1') record(alert.id, 'ntfy', event, true, detail);
         log(`${event} ${alert.severity} ${alert.alert_key} - ${alert.label} (silenced)`);
         return { emailOk: true };
     }
@@ -62,6 +64,18 @@ async function dispatch(event, alert) {
         const r = await syslogOut.send(event, alert, msg);
         record(alert.id, 'syslog', event, r.ok, r.detail);
         if (!r.ok) log(`syslog ${event} failed for ${alert.alert_key}: ${r.detail}`);
+    }
+
+    // ntfy reuses the email subject as its title and the (short) syslog
+    // template as its body - push notifications want one glanceable line.
+    if (getSetting('ntfy_enabled') === '1') {
+        const title = templates.render(
+            getSetting(isClear ? 'tmpl_subject_clear' : 'tmpl_subject_raise'), vars);
+        const msg = templates.render(
+            getSetting(isClear ? 'tmpl_syslog_clear' : 'tmpl_syslog_raise'), vars);
+        const r = await ntfy.send(event, alert, title, msg);
+        record(alert.id, 'ntfy', event, r.ok, r.detail);
+        if (!r.ok) log(`ntfy ${event} failed for ${alert.alert_key}: ${r.detail}`);
     }
 
     log(`${event} ${alert.severity} ${alert.alert_key} - ${alert.label}` +

@@ -270,6 +270,8 @@ tr.acked td { opacity: 0.55; }
 .badge.ok { color: var(--se-up); border-color: var(--se-up); }
 .badge.fail { color: var(--se-down); border-color: var(--se-down); }
 
+/* Short value key (snmp-status.json `code`), shown as a paste-ready {code}
+   token for PingCanvas boards; click copies it. */
 .code-chip {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 11px;
@@ -279,7 +281,11 @@ tr.acked td { opacity: 0.55; }
     border-radius: 4px;
     padding: 0 5px;
     letter-spacing: 0.5px;
+    cursor: pointer;
+    user-select: none;
 }
+.code-chip:hover { border-color: var(--se-accent); color: var(--se-txt); }
+.code-chip.copied { color: var(--se-up); border-color: var(--se-up); }
 
 /* Feed/channel trouble banners above the alarm list */
 .banner {

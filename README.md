@@ -19,6 +19,14 @@ threshold for each kind, and a notification when one crosses.
 - **Syslog (RFC 5424 over UDP)** - lands first-class in
   [SyslogCanvas](https://github.com/RootSwitch/SyslogCanvas) or any receiver,
   with structured data carrying host/kind/severity/code
+- **ntfy push** - point it at ntfy.sh or a self-hosted server for phone
+  notifications; crit pushes as urgent priority, warn as high
+- **Reboot detection** - an exported uptime value going backwards raises a
+  one-shot "host rebooted" event (no clear noise; sysUpTime's ~497-day wrap
+  is indistinguishable from a reboot)
+- **Test alarm** - fire a synthetic alarm through the real pipeline
+  (templates, every enabled channel, raise then clear) so you know what the
+  2 AM email will look like before 2 AM does
 - **Stale-feed watchdog** - if SNMPCanvas stops writing, that is itself an alarm
 - **Watching page** - every exported value with the rule that applies to it
   (and where it came from: default, override, or muted), so misconfiguration
@@ -115,8 +123,15 @@ Syslog messages are RFC 5424 with a structured-data block:
 
 Facility and the crit/warn/clear severity mapping are configurable. Failed
 emails are retried with exponential backoff (1 min doubling, 15 min cap) and
-shown as a banner plus a notifications log entry; syslog is UDP
-fire-and-forget by design.
+shown as a banner plus a notifications log entry; syslog and ntfy are
+fire-and-forget by design - email is the guaranteed channel.
+
+### Uptime Kuma (or any external monitor)
+
+`GET /api/health?alarms=1` returns **503 while any crit alarm is raised**
+(counts only, no alarm details - the endpoint is public). Point an Uptime
+Kuma HTTP monitor at it and you get a free second notification path, plus a
+dead-man's switch: if AlertCanvas itself dies, Kuma notices that too.
 
 ## HTTPS
 
@@ -172,6 +187,8 @@ node tools/refresh-status.js --in sample.json --out data/live.json --set 8PTS=60
   "removed from feed" rather than "device down".
 - Email is plain text, password/no-auth/app-password SMTP - no OAuth. If your
   provider requires XOAUTH2, use an app password or a local relay.
+- Settings/thresholds/history live in one SQLite file; the **Download
+  backup** button in Settings streams a consistent snapshot of it.
 - The web UI has no per-user accounts - it's one shared password, same as the
   rest of the suite. Keep it on a trusted network segment.
 

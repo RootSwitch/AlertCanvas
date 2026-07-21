@@ -9,6 +9,7 @@ const { db, getSetting, DEFAULT_THRESHOLDS, DEFAULT_IF_RULES } = require('./db')
 const rules = require('./rules');
 const notify = require('./notify');
 const auth = require('./auth');
+const { fmtDuration } = require('./templates');
 
 function log(...args) { console.log(new Date().toISOString(), '[scanner]', ...args); }
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -85,7 +86,17 @@ const stmts = {
         notified_raise=@notified_raise, notified_clear=@notified_clear,
         notify_attempts=@notify_attempts, last_attempt_ts=@last_attempt_ts
         WHERE id=@id`),
-    get: db.prepare('SELECT * FROM alerts WHERE id = ?')
+    get: db.prepare('SELECT * FROM alerts WHERE id = ?'),
+    // Reboots are events, not states: the row is born already cleared (it
+    // shows in History), and only the raise notification is sent.
+    insertEvent: db.prepare(`INSERT INTO alerts (alert_key, state, severity, kind, host, code, label,
+        value, peak_value, unit, breach_count, first_breach_ts, raised_ts, cleared_ts, last_seen_ts,
+        clear_reason, notified_raise, notified_clear)
+        VALUES (@alert_key, 'cleared', @severity, @kind, @host, @code, @label,
+        @value, @peak_value, @unit, 1, @now, @now, @now, @now, 'event', 0, 1)`),
+    uptimeAll: db.prepare('SELECT code, value FROM uptime_seen'),
+    uptimeUpsert: db.prepare(`INSERT INTO uptime_seen (code, value, ts) VALUES (?, ?, ?)
+        ON CONFLICT(code) DO UPDATE SET value = excluded.value, ts = excluded.ts`)
 };
 
 function saveRow(row) { stmts.update.run(row); }
@@ -140,6 +151,36 @@ async function tick() {
         });
 
         const events = []; // { type, id }
+
+        // Reboot detection: compare exported uptime values against the last
+        // scan's. Detected events become already-cleared history rows with a
+        // single raise notification (they are moments, not ongoing states).
+        if (feed.ok) {
+            const prev = new Map(stmts.uptimeAll.all().map((r) => [r.code, r.value]));
+            const reboots = rules.detectReboots(prev, feed.doc.metrics);
+            db.transaction(() => {
+                for (const m of feed.doc.metrics || []) {
+                    // m.value == null guards Number(null) === 0: an unreadable
+                    // uptime must neither store 0 nor look like a reboot.
+                    if (m.kind === 'uptime' && m.value != null && Number.isFinite(Number(m.value))) {
+                        stmts.uptimeUpsert.run(m.code, Number(m.value), now);
+                    }
+                }
+                if (getSetting('reboot_detect') === '1') {
+                    const severity = getSetting('reboot_severity') === 'crit' ? 'crit' : 'warn';
+                    for (const ev of reboots) {
+                        const info = stmts.insertEvent.run({
+                            alert_key: `reboot:${ev.code}`, severity, kind: 'reboot',
+                            host: ev.host, code: ev.code,
+                            label: `${ev.host} rebooted (uptime ${fmtDuration(ev.from)} -> ${fmtDuration(ev.to)})`,
+                            value: Math.round(ev.to), peak_value: Math.round(ev.from), unit: 's', now
+                        });
+                        events.push({ type: 'raise', id: info.lastInsertRowid });
+                    }
+                }
+            })();
+        }
+
         db.transaction(() => {
             const open = new Map();
             for (const row of stmts.open.all()) open.set(row.alert_key, row);

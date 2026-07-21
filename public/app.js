@@ -60,6 +60,40 @@
         return `${value}${unit || ''}`;
     }
 
+    // Code chips render as paste-ready {code} tokens (PingCanvas board
+    // syntax) and copy themselves on click - same behavior as SNMPCanvas.
+    function codeChip(code) {
+        return code ? ` <span class="code-chip" title="Click to copy {${esc(code)}}">{${esc(code)}}</span>` : '';
+    }
+
+    function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+        // Plain-http fallback (LAN deployments without TLS)
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } finally { ta.remove(); }
+        return Promise.resolve();
+    }
+
+    // Capture phase so the copy wins over any row click handlers.
+    document.addEventListener('click', (ev) => {
+        const chip = ev.target.closest?.('.code-chip');
+        if (!chip) return;
+        ev.stopPropagation();
+        ev.preventDefault();
+        const token = chip.textContent.trim();
+        copyText(token).then(() => {
+            chip.classList.add('copied');
+            const prev = chip.textContent;
+            chip.textContent = 'copied';
+            setTimeout(() => { chip.textContent = prev; chip.classList.remove('copied'); }, 700);
+        }).catch(() => { /* clipboard unavailable - token stays selectable */ });
+    }, true);
+
     function setAutoRefresh(fn, ms) {
         clearInterval(refreshTimer);
         refreshTimer = fn ? setInterval(fn, ms) : null;
@@ -225,7 +259,7 @@
         const rows = alerts.map((a) => `
             <tr class="${a.ackedTs ? 'acked' : ''}">
                 <td>${sevPill(a)}</td>
-                <td>${esc(a.label)}${a.code ? ` <span class="code-chip">${esc(a.code)}</span>` : ''}</td>
+                <td>${esc(a.label)}${codeChip(a.code)}</td>
                 <td class="num">${fmtValue(a.value, a.unit)}${a.threshold != null ? ` <span class="muted">/ ${fmtValue(a.threshold, a.unit)}</span>` : ''}</td>
                 <td class="num hide-sm" title="worst value seen">${fmtValue(a.peakValue, a.unit)}</td>
                 <td class="hide-sm">${fmtAgo(a.raisedTs || a.firstBreachTs)}</td>
@@ -335,7 +369,7 @@
             .map((m) => `
             <tr>
                 <td>${esc(m.host)}</td>
-                <td>${esc(m.display)} <span class="code-chip">${esc(m.code)}</span></td>
+                <td>${esc(m.display)}${codeChip(m.code)}</td>
                 <td class="hide-sm">${esc(m.kind)}</td>
                 <td>${ruleText(m.rule, m.unit, m.lowerIsBad, m.source, m.muted)}</td>
                 <td>${stateBadge(m.current, m.muted)}</td>
@@ -351,7 +385,7 @@
                 return `
             <tr>
                 <td>${esc(i.host)}</td>
-                <td>${esc(i.name)}${i.alias ? ` <span class="muted">(${esc(i.alias)})</span>` : ''} <span class="code-chip">${esc(i.code)}</span></td>
+                <td>${esc(i.name)}${i.alias ? ` <span class="muted">(${esc(i.alias)})</span>` : ''}${codeChip(i.code)}</td>
                 <td class="${linkCls}" title="oper ${esc(i.operStatus)}, admin ${esc(i.adminStatus)}">${link}</td>
                 ${aspectCell(i.errors, 'pps')}
                 ${aspectCell(i.discards, 'pps')}
@@ -409,12 +443,15 @@
         const rows = alerts.map((a) => `
             <tr>
                 <td><span class="sev ${a.severity === 'crit' ? 'crit' : 'warn'}">${esc(a.severity)}</span></td>
-                <td>${esc(a.label)}${a.code ? ` <span class="code-chip">${esc(a.code)}</span>` : ''}</td>
+                <td>${esc(a.label)}${codeChip(a.code)}</td>
                 <td class="num hide-sm" title="worst value seen">${fmtValue(a.peakValue, a.unit)}</td>
                 <td>${fmtTs(a.raisedTs)}</td>
                 <td>${fmtTs(a.clearedTs)}</td>
                 <td class="num">${fmtDuration((a.clearedTs || 0) - (a.raisedTs || a.firstBreachTs))}</td>
-                <td class="hide-sm">${a.clearReason === 'source-removed' ? '<span class="muted">removed from feed</span>' : 'returned to normal'}</td>
+                <td class="hide-sm">${a.clearReason === 'source-removed' ? '<span class="muted">removed from feed</span>'
+                    : a.clearReason === 'event' ? '<span class="muted">event</span>'
+                    : a.clearReason === 'test' ? '<span class="muted">test alarm</span>'
+                    : 'returned to normal'}</td>
             </tr>`).join('');
 
         const noteRows = notifications.map((n) => `
@@ -497,7 +534,7 @@
 
         const ovRows = overrides.map((o) => `
             <tr>
-                <td>${o.scope === 'code' ? `<span class="code-chip">${esc(o.code)}</span>` : esc(o.host)}</td>
+                <td>${o.scope === 'code' ? codeChip(o.code) : esc(o.host)}</td>
                 <td>${esc(IF_KIND_LABEL[o.kind] || o.kind)}</td>
                 <td class="num">${o.severity ? '-' : (o.warn ?? '-')}</td>
                 <td class="num">${o.severity ? esc(o.severity) : (o.crit ?? '-')}</td>
@@ -539,6 +576,13 @@
                 <thead><tr><th>Kind</th><th>Dir</th><th>Warn at</th><th>Crit at</th></tr></thead>
                 <tbody>${kindRows}</tbody>
             </table>
+            <div class="form-actions">
+                <label title="An exported uptime value going backwards means the host restarted. Fires once as an event; no clear notification."><input type="checkbox" id="set-rebootDetect" ${s.rebootDetect ? 'checked' : ''}> Reboot detection (uptime goes backwards)</label>
+                <select id="set-rebootSeverity">
+                    <option value="warn" ${s.rebootSeverity !== 'crit' ? 'selected' : ''}>warn</option>
+                    <option value="crit" ${s.rebootSeverity === 'crit' ? 'selected' : ''}>crit</option>
+                </select>
+            </div>
             <div class="form-actions"><button class="btn-primary" id="save-th">Save</button><span id="th-msg"></span></div>
         </div>
 
@@ -631,6 +675,21 @@
         </div>
 
         <div class="panel">
+            <h2>ntfy push</h2>
+            <div class="form-grid">
+                <label>Enabled</label><span><input type="checkbox" id="set-ntfyEnabled" ${s.ntfyEnabled ? 'checked' : ''}></span>
+                <label>Server</label><input type="text" id="set-ntfyServer" value="${esc(s.ntfyServer)}" placeholder="https://ntfy.sh or self-hosted">
+                <label>Topic</label><input type="text" id="set-ntfyTopic" value="${esc(s.ntfyTopic)}" placeholder="my-alerts-topic">
+                <label>Access token</label><input type="password" id="set-ntfyToken" placeholder="${s.ntfyTokenSet ? '(saved - leave blank to keep)' : '(optional)'}" autocomplete="new-password">
+            </div>
+            <div class="form-actions">
+                <button class="btn-primary" id="save-ntfy">Save</button>
+                <button id="test-ntfy">Send test push</button><span id="ntfy-msg"></span>
+            </div>
+            <div class="section-note">Push title uses the email subject template, body uses the syslog message template. crit sends as urgent priority, warn as high, clears as default. Best-effort like syslog - email stays the retried channel.</div>
+        </div>
+
+        <div class="panel">
             <h2>Verbiage</h2>
             <div class="section-note">Templates for notifications. Variables:</div>
             <div class="tmpl-vars">{{label}} {{host}} {{metric}} {{kind}} {{code}} {{value}} {{unit}} {{threshold}} {{severity}} {{event}} {{time}} {{duration}}</div>
@@ -644,7 +703,11 @@
                 <label>Syslog raise</label><input type="text" id="set-tmplSyslogRaise" value="${esc(s.tmplSyslogRaise)}">
                 <label>Syslog clear</label><input type="text" id="set-tmplSyslogClear" value="${esc(s.tmplSyslogClear)}">
             </div>
-            <div class="form-actions"><button class="btn-primary" id="save-tmpl">Save</button><span id="tmpl-msg"></span></div>
+            <div class="form-actions">
+                <button class="btn-primary" id="save-tmpl">Save</button>
+                <button id="test-alarm" title="Fires a synthetic warn alarm through the real pipeline - templates, every enabled channel, raise then clear. Lands in History as a test.">Send test alarm</button>
+                <span id="tmpl-msg"></span>
+            </div>
         </div>
 
         <div class="panel">
@@ -657,7 +720,11 @@
             <div class="form-grid" style="margin-top:14px">
                 <label>History retention (days)</label><input type="number" id="set-retentionDays" value="${s.retentionDays}" min="1">
             </div>
-            <div class="form-actions"><button class="btn-primary" id="save-data">Save</button><span id="data-msg"></span></div>
+            <div class="form-actions">
+                <button class="btn-primary" id="save-data">Save</button>
+                <a class="btn" href="/api/backup" title="Consistent SQLite snapshot: settings, thresholds, overrides, alarm history">Download backup</a>
+                <span id="data-msg"></span>
+            </div>
             <div class="section-note">Data directory: ${esc(s.dataDir)}</div>
         </div>`;
 
@@ -694,7 +761,11 @@
                     crit: numOrNull($main.querySelector(`[data-th="${kind}.crit"]`))
                 };
             }
-            save('th-msg', { thresholds });
+            save('th-msg', {
+                thresholds,
+                rebootDetect: $('set-rebootDetect').checked,
+                rebootSeverity: $('set-rebootSeverity').value
+            });
         });
 
         $('save-if').addEventListener('click', () => {
@@ -823,6 +894,24 @@
             } catch (e) { flash('syslog-msg', false, e.message); }
         });
 
+        // --- ntfy ---
+        $('save-ntfy').addEventListener('click', () => save('ntfy-msg', {
+            ntfyEnabled: $('set-ntfyEnabled').checked,
+            ntfyServer: $('set-ntfyServer').value,
+            ntfyTopic: $('set-ntfyTopic').value,
+            ...($('set-ntfyToken').value !== '' ? { ntfyToken: $('set-ntfyToken').value } : {})
+        }));
+        $('test-ntfy').addEventListener('click', async () => {
+            flash('ntfy-msg', true, 'Sending...');
+            try {
+                const r = await api('POST', '/api/test/ntfy', {
+                    server: $('set-ntfyServer').value, topic: $('set-ntfyTopic').value,
+                    ...($('set-ntfyToken').value !== '' ? { token: $('set-ntfyToken').value } : {})
+                });
+                flash('ntfy-msg', r.ok, r.ok ? `Sent to ${r.detail}` : r.detail);
+            } catch (e) { flash('ntfy-msg', false, e.message); }
+        });
+
         // --- verbiage ---
         $('save-tmpl').addEventListener('click', () => save('tmpl-msg', {
             tmplSubjectRaise: $('set-tmplSubjectRaise').value,
@@ -832,6 +921,14 @@
             tmplSyslogRaise: $('set-tmplSyslogRaise').value,
             tmplSyslogClear: $('set-tmplSyslogClear').value
         }));
+        $('test-alarm').addEventListener('click', async () => {
+            flash('tmpl-msg', true, 'Firing test alarm...');
+            try {
+                const r = await api('POST', '/api/test/alarm', {});
+                const parts = r.results.map((n) => `${n.channel} ${n.event}: ${n.ok ? 'sent' : 'FAILED (' + n.detail + ')'}`);
+                flash('tmpl-msg', r.ok, parts.join(' | '));
+            } catch (e) { flash('tmpl-msg', false, e.message); }
+        });
 
         // --- security & data ---
         $('pw-save').addEventListener('click', async () => {

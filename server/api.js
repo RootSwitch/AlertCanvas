@@ -4,12 +4,15 @@
 // Content-Type: application/json (cross-site forms can't send it - CSRF belt
 // on top of the SameSite=Lax cookie).
 
-const { db, DATA_DIR, getSetting, setSetting, setSmtpPassword } = require('./db');
+const fs = require('node:fs');
+const path = require('node:path');
+const { db, DATA_DIR, getSetting, setSetting, setSmtpPassword, setSecretSetting } = require('./db');
 const auth = require('./auth');
 const scanner = require('./scanner');
 const notify = require('./notify');
 const smtp = require('./smtp');
 const syslogOut = require('./syslog-out');
+const ntfy = require('./ntfy');
 const rules = require('./rules');
 
 // --- tiny helpers ---
@@ -102,6 +105,8 @@ const SETTING_KEYS = {
     scanIntervalS: 'scan_interval_s', raiseScans: 'raise_scans', clearScans: 'clear_scans',
     staleAfterS: 'stale_after_s', missingScansToClear: 'missing_scans_to_clear',
     renotifyIntervalS: 'renotify_interval_s', retentionDays: 'retention_days',
+    rebootDetect: 'reboot_detect', rebootSeverity: 'reboot_severity',
+    ntfyEnabled: 'ntfy_enabled', ntfyServer: 'ntfy_server', ntfyTopic: 'ntfy_topic',
     emailEnabled: 'email_enabled', smtpHost: 'smtp_host', smtpPort: 'smtp_port',
     smtpMode: 'smtp_mode', smtpUser: 'smtp_user', smtpAllowSelfSigned: 'smtp_allow_self_signed',
     smtpFrom: 'smtp_from', smtpTo: 'smtp_to',
@@ -123,13 +128,27 @@ const INT_RANGE = {
     smtp_port: [1, 65535], syslog_port: [1, 65535], syslog_facility: [0, 23],
     syslog_sev_crit: [0, 7], syslog_sev_warn: [0, 7], syslog_sev_clear: [0, 7]
 };
-const BOOL_KEYS = new Set(['email_enabled', 'syslog_enabled', 'smtp_allow_self_signed']);
+const BOOL_KEYS = new Set(['email_enabled', 'syslog_enabled', 'ntfy_enabled', 'smtp_allow_self_signed', 'reboot_detect']);
 const SCAN_KEYS = new Set(['status_file', 'scan_interval_s']);
 
 // --- route table ---
 // handler(req, res, params, body, query). `authRequired: false` routes are public.
 const routes = [
-    { method: 'GET', path: /^\/api\/health$/, authRequired: false, handler: (req, res) => ok(res, { ok: true, version: require('../package.json').version }) },
+    // Plain: liveness for the container HEALTHCHECK. With ?alarms=1 it also
+    // goes 503 while any crit alarm is raised, so an external monitor (e.g.
+    // Uptime Kuma pointed at this URL) doubles as a second notification path
+    // AND a dead-man's switch for AlertCanvas itself. Deliberately public and
+    // counts-only - no alarm details leak without a session.
+    { method: 'GET', path: /^\/api\/health$/, authRequired: false, handler: (req, res, p, body, query) => {
+        const base = { ok: true, version: require('../package.json').version };
+        if (!query || query.get('alarms') === null) return ok(res, base);
+        const counts = db.prepare(`SELECT
+            SUM(CASE WHEN severity = 'crit' THEN 1 ELSE 0 END) AS crit, COUNT(*) AS raised
+            FROM alerts WHERE state IN ('active','clearing')`).get();
+        const crit = counts.crit || 0;
+        json(res, crit > 0 ? 503 : 200,
+            { ...base, ok: crit === 0, raisedAlarms: counts.raised || 0, critAlarms: crit });
+    } },
 
     { method: 'GET', path: /^\/api\/session$/, authRequired: false, handler: (req, res) => {
         const authed = auth.validateSession(auth.tokenFromRequest(req));
@@ -284,6 +303,7 @@ const routes = [
         ok(res, {
             ...out, thresholds, ifRules, deviceDown,
             smtpPassSet: !!getSetting('smtp_pass'),
+            ntfyTokenSet: !!getSetting('ntfy_token'),
             dataDir: DATA_DIR,
             credentialEncryption: !!process.env.ALERTCANVAS_SECRET
         });
@@ -304,6 +324,7 @@ const routes = [
                 v = String(v);
                 if (name.startsWith('tmpl') && v.length > 2000) return bad(res, `${name} is too long (2000 chars max).`);
                 if (name === 'smtpMode' && !['none', 'starttls', 'tls'].includes(v)) return bad(res, 'smtpMode must be none, starttls, or tls.');
+                if (name === 'rebootSeverity' && !['warn', 'crit'].includes(v)) return bad(res, 'rebootSeverity must be warn or crit.');
                 if (name === 'statusFile' && !/\.json$/i.test(v.trim())) return bad(res, 'Status file path must end in .json');
                 if (name === 'statusFile') v = v.trim();
             }
@@ -333,6 +354,7 @@ const routes = [
 
         for (const [key, v] of changes) setSetting(key, v);
         if (body.smtpPass !== undefined) setSmtpPassword(String(body.smtpPass));
+        if (body.ntfyToken !== undefined) setSecretSetting('ntfy_token', String(body.ntfyToken));
         if (changes.some(([key]) => SCAN_KEYS.has(key))) scanner.restart();
         ok(res);
     } },
@@ -344,7 +366,57 @@ const routes = [
         ok(res);
     } },
 
+    // Consistent snapshot of the database, streamed as a download. (Same
+    // pattern as SNMPCanvas: thresholds, overrides, history, settings.)
+    { method: 'GET', path: /^\/api\/backup$/, handler: (req, res) => {
+        const tmp = path.join(DATA_DIR, `.backup-${Date.now()}.db`);
+        db.prepare('VACUUM INTO ?').run(tmp);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const stat = fs.statSync(tmp);
+        res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': stat.size,
+            'Content-Disposition': `attachment; filename="alertcanvas-${stamp}.db"`,
+            'Cache-Control': 'no-store'
+        });
+        const stream = fs.createReadStream(tmp);
+        const cleanup = () => fs.unlink(tmp, () => {});
+        stream.on('close', cleanup);
+        stream.on('error', cleanup);
+        stream.pipe(res);
+    } },
+
     // --- notification tests + log ---
+
+    // Fire a synthetic alarm through the REAL pipeline: templates, severity
+    // mapping, every enabled channel, raise then clear. The channel tests
+    // prove transport; this proves the mail you'll actually get at 2 AM.
+    { method: 'POST', path: /^\/api\/test\/alarm$/, handler: async (req, res) => {
+        const silenceUntil = parseInt(getSetting('silence_until'), 10) || 0;
+        const now = Math.floor(Date.now() / 1000);
+        if (silenceUntil > now) return bad(res, 'Notifications are silenced - resume first.');
+        if (getSetting('email_enabled') !== '1' && getSetting('syslog_enabled') !== '1' &&
+            getSetting('ntfy_enabled') !== '1') {
+            return bad(res, 'No notification channels are enabled.');
+        }
+        // Born a minute ago so the clear reports a sane {{duration}}. The row
+        // lands in History (reason: test) like any real alarm.
+        const info = db.prepare(`INSERT INTO alerts (alert_key, state, severity, kind, host, code, label,
+            value, peak_value, threshold, unit, breach_count, first_breach_ts, raised_ts, last_seen_ts,
+            notified_raise, notified_clear)
+            VALUES (?, 'active', 'warn', 'test', 'alertcanvas', NULL, 'AlertCanvas test alarm',
+            42, 42, 40, '%', 1, ?, ?, ?, 1, 1)`).run(`test:${now}`, now - 60, now - 60, now);
+        const row = db.prepare('SELECT * FROM alerts WHERE id = ?').get(info.lastInsertRowid);
+        await notify.dispatch('raise', row);
+        db.prepare("UPDATE alerts SET state = 'cleared', cleared_ts = ?, clear_reason = 'test' WHERE id = ?")
+            .run(now, row.id);
+        await notify.dispatch('clear', db.prepare('SELECT * FROM alerts WHERE id = ?').get(row.id));
+        const results = db.prepare(
+            'SELECT channel, event, ok, detail FROM notifications WHERE alert_id = ? ORDER BY id').all(row.id)
+            .map((n) => ({ channel: n.channel, event: n.event, ok: !!n.ok, detail: n.detail }));
+        ok(res, { ok: results.length > 0 && results.every((n) => n.ok), results });
+    } },
+
     { method: 'POST', path: /^\/api\/test\/email$/, handler: async (req, res, p, body) => {
         const r = await smtp.sendMail(
             '[AlertCanvas] test message',
@@ -354,6 +426,14 @@ const routes = [
                 pass: body.pass, from: body.from, to: body.to, allowSelfSigned: body.allowSelfSigned ? '1' : '0'
             });
         notify.record(null, 'email', 'test', r.ok, r.detail);
+        ok(res, r);
+    } },
+
+    { method: 'POST', path: /^\/api\/test\/ntfy$/, handler: async (req, res, p, body) => {
+        const r = await ntfy.send('test', { severity: 'warn', kind: 'test', host: null, code: null },
+            'AlertCanvas test', 'AlertCanvas ntfy test message',
+            { server: body.server, topic: body.topic, ...(body.token !== undefined && body.token !== '' ? { token: body.token } : {}) });
+        notify.record(null, 'ntfy', 'test', r.ok, r.detail);
         ok(res, r);
     } },
 

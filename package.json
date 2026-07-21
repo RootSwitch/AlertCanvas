@@ -15,7 +15,7 @@
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
-    "test": "node tools/test-rules.js",
+    "test": "node tools/test-rules.js && node tools/charcheck.js",
     "refresh-status": "node tools/refresh-status.js"
   },
   "engines": {

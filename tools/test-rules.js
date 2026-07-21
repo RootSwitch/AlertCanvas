@@ -204,4 +204,26 @@ test('explain flags muted and rule-less values', () => {
     assert.strictEqual(ex.metrics[1].current, null);
 });
 
+// --- reboot detection ---
+test('uptime going backwards is a reboot', () => {
+    const prev = new Map([['U1', 500000]]);
+    const evts = rules.detectReboots(prev, [{ code: 'U1', kind: 'uptime', host: 'h1', value: 120 }]);
+    assert.strictEqual(evts.length, 1);
+    assert.deepStrictEqual(evts[0], { code: 'U1', host: 'h1', from: 500000, to: 120 });
+});
+test('uptime rising or first sighting is not a reboot', () => {
+    const prev = new Map([['U1', 500000]]);
+    assert.strictEqual(rules.detectReboots(prev, [{ code: 'U1', kind: 'uptime', host: 'h1', value: 500030 }]).length, 0);
+    assert.strictEqual(rules.detectReboots(new Map(), [{ code: 'U1', kind: 'uptime', host: 'h1', value: 120 }]).length, 0);
+});
+test('small backwards jitter is absorbed, null ignored', () => {
+    const prev = new Map([['U1', 500000]]);
+    assert.strictEqual(rules.detectReboots(prev, [{ code: 'U1', kind: 'uptime', host: 'h1', value: 499985 }]).length, 0);
+    assert.strictEqual(rules.detectReboots(prev, [{ code: 'U1', kind: 'uptime', host: 'h1', value: null }]).length, 0);
+});
+test('non-uptime kinds never look like reboots', () => {
+    const prev = new Map([['M1', 90]]);
+    assert.strictEqual(rules.detectReboots(prev, [metric({ value: 5 })]).length, 0);
+});
+
 console.log(`ok - ${passed} tests passed`);

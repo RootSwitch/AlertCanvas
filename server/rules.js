@@ -209,6 +209,25 @@ function evaluate(doc, config) {
 
 function round2(v) { return Math.round(v * 100) / 100; }
 
+// Reboot detection: an uptime metric whose value went BACKWARDS since the
+// previous scan means the host restarted. Pure - the scanner owns persisting
+// the previous values. The 30 s guard absorbs sampling jitter (the reading
+// and its sampledAt are not taken at the same instant). Note sysUpTime wraps
+// at ~497 days, which is indistinguishable from a reboot.
+function detectReboots(prev, metrics) {
+    const out = [];
+    for (const m of metrics || []) {
+        if (m.kind !== 'uptime') continue;
+        // Number(null) is 0 - an unreadable uptime must not look like a reboot.
+        if (m.value == null) continue;
+        const v = Number(m.value);
+        if (!Number.isFinite(v)) continue;
+        const p = prev.get(m.code);
+        if (p != null && v < p - 30) out.push({ code: m.code, host: m.host, from: p, to: v });
+    }
+    return out;
+}
+
 // The Watching view: for every value in the feed, what rule (if any) applies,
 // where it came from, and how the current reading scores against it. Pure,
 // like evaluate() - same inputs, but explanation instead of conditions.
@@ -286,4 +305,4 @@ function explain(doc, config) {
     return { metrics, interfaces, devices };
 }
 
-module.exports = { evaluate, explain, LOWER_IS_BAD, METRIC_KINDS };
+module.exports = { evaluate, explain, detectReboots, LOWER_IS_BAD, METRIC_KINDS };

@@ -92,14 +92,51 @@ CREATE INDEX IF NOT EXISTS idx_alerts_hist ON alerts(cleared_ts) WHERE state = '
 CREATE TABLE IF NOT EXISTS notifications (
   id       INTEGER PRIMARY KEY,
   alert_id INTEGER REFERENCES alerts(id) ON DELETE SET NULL,
-  channel  TEXT NOT NULL CHECK (channel IN ('email','syslog')),
+  channel  TEXT NOT NULL CHECK (channel IN ('email','syslog','ntfy')),
   event    TEXT NOT NULL CHECK (event IN ('raise','clear','escalate','renotify','test')),
   ts       INTEGER NOT NULL,
   ok       INTEGER NOT NULL,
   detail   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_ts ON notifications(ts);
+
+-- Last-seen uptime per exported uptime metric, for reboot detection (an
+-- uptime that goes backwards means the host restarted).
+CREATE TABLE IF NOT EXISTS uptime_seen (
+  code  TEXT PRIMARY KEY,
+  value REAL NOT NULL,
+  ts    INTEGER NOT NULL
+);
 `);
+
+// --- lightweight migration: the notifications channel CHECK grew 'ntfy'.
+// SQLite can't alter a CHECK, so databases created before it get a one-time
+// table rebuild (same pattern as SNMPCanvas's entities migration).
+{
+    const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'").get().sql;
+    if (!sql.includes("'ntfy'")) {
+        db.pragma('foreign_keys = OFF');
+        db.transaction(() => {
+            db.exec(`
+                CREATE TABLE notifications_migrate (
+                  id       INTEGER PRIMARY KEY,
+                  alert_id INTEGER REFERENCES alerts(id) ON DELETE SET NULL,
+                  channel  TEXT NOT NULL CHECK (channel IN ('email','syslog','ntfy')),
+                  event    TEXT NOT NULL CHECK (event IN ('raise','clear','escalate','renotify','test')),
+                  ts       INTEGER NOT NULL,
+                  ok       INTEGER NOT NULL,
+                  detail   TEXT
+                );
+                INSERT INTO notifications_migrate (id, alert_id, channel, event, ts, ok, detail)
+                  SELECT id, alert_id, channel, event, ts, ok, detail FROM notifications;
+                DROP TABLE notifications;
+                ALTER TABLE notifications_migrate RENAME TO notifications;
+                CREATE INDEX IF NOT EXISTS idx_notifications_ts ON notifications(ts);
+            `);
+        })();
+        db.pragma('foreign_keys = ON');
+    }
+}
 
 // --- settings ---
 const getSettingStmt = db.prepare('SELECT value FROM settings WHERE key = ?');
@@ -155,6 +192,14 @@ const DEFAULTS = {
     smtp_allow_self_signed: '0',
     smtp_from: '',
     smtp_to: '',                   // comma-separated
+    // reboot detection (uptime metric going backwards = the host restarted)
+    reboot_detect: '1',
+    reboot_severity: 'warn',
+    // ntfy push notifications
+    ntfy_enabled: '0',
+    ntfy_server: 'https://ntfy.sh',
+    ntfy_topic: '',
+    ntfy_token: '',
     // syslog
     syslog_enabled: '0',
     syslog_host: '',
@@ -200,21 +245,26 @@ function decryptValue(stored) {
     return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
 }
 
-function setSmtpPassword(plain) {
-    setSetting('smtp_pass', encryptValue(plain ?? ''));
-    setSetting('smtp_pass_enc', encKey ? '1' : '0');
+// Any setting that is a credential goes through these: encrypted when the
+// secret is set, with a companion <key>_enc flag so a DB can move between
+// encrypted and plain deployments.
+function setSecretSetting(key, plain) {
+    setSetting(key, encryptValue(plain ?? ''));
+    setSetting(`${key}_enc`, encKey ? '1' : '0');
 }
-function getSmtpPassword() {
-    const stored = getSetting('smtp_pass');
-    if (getSetting('smtp_pass_enc') === '1') {
+function getSecretSetting(key) {
+    const stored = getSetting(key);
+    if (getSetting(`${key}_enc`) === '1') {
         try { return decryptValue(stored); }
         catch (_) { return ''; } // secret changed - treat as unset
     }
     return stored;
 }
+const setSmtpPassword = (plain) => setSecretSetting('smtp_pass', plain);
+const getSmtpPassword = () => getSecretSetting('smtp_pass');
 
 module.exports = {
     db, DATA_DIR, getSetting, setSetting,
-    setSmtpPassword, getSmtpPassword,
+    setSecretSetting, getSecretSetting, setSmtpPassword, getSmtpPassword,
     DEFAULT_THRESHOLDS, DEFAULT_IF_RULES
 };
