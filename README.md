@@ -126,6 +126,25 @@ emails are retried with exponential backoff (1 min doubling, 15 min cap) and
 shown as a banner plus a notifications log entry; syslog and ntfy are
 fire-and-forget by design - email is the guaranteed channel.
 
+### SMTP relay / syslog server on the SAME docker host
+
+The compose file maps `host.docker.internal` to the host, so when your relay
+or syslog server runs on the AlertCanvas box itself (as a host service or a
+sibling container with a published port), set Settings -> Email/Syslog server
+to `host.docker.internal` - no bridge IPs to look up, and it survives network
+recreations. Two things to check on the host side:
+
+1. Container traffic arrives from the docker bridge subnet (`172.x`), not
+   your LAN. A relay that restricts by source network (Postfix `mynetworks`,
+   etc.) must also allow `172.16.0.0/12`, and any host firewall must accept
+   the docker bridge for those ports.
+2. The service must listen on `0.0.0.0` (or the bridge address) - one bound
+   strictly to the LAN interface IP is reachable at that LAN IP instead,
+   which also works from containers as long as point 1 is satisfied.
+
+The Test buttons in Settings exercise exactly this path, so they'll tell you
+immediately whether the plumbing is right.
+
 ### Uptime Kuma (or any external monitor)
 
 `GET /api/health?alarms=1` returns **503 while any crit alarm is raised**

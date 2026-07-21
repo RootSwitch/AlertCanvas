@@ -30,6 +30,15 @@ services:
       # host is the usual answer). AlertCanvas reads
       # /status/snmp-status.json by default (Settings -> status file path).
       - ../snmpcanvas/data:/status:ro,z
+    # Make the DOCKER HOST reachable from inside the container by name -
+    # for when your SMTP relay or syslog server runs on this same box (as a
+    # host service or another container with a published port). Point
+    # Settings -> Email/Syslog at "host.docker.internal" instead of a bridge
+    # IP that can change. Note the traffic arrives FROM the docker bridge
+    # subnet (172.x), so a relay restricted by source network (e.g. Postfix
+    # mynetworks) must also allow 172.16.0.0/12.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Timezone governs log timestamps
       - TZ=Etc/UTC
