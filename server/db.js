@@ -210,11 +210,11 @@ const DEFAULTS = {
     syslog_sev_clear: '5',
     // alert formatting - templates.js substitutes {{...}} variables
     tmpl_subject_raise: '[AlertCanvas] {{severity}}: {{label}}',
-    tmpl_body_raise: '{{time}}\n{{label}} is {{severity}}: value {{value}}{{unit}} (threshold {{threshold}}{{unit}}).\n\n-- AlertCanvas',
+    tmpl_body_raise: '{{time}}\n{{label}} is {{severity}}: {{detail}}.\n\n-- AlertCanvas',
     tmpl_subject_clear: '[AlertCanvas] cleared: {{label}}',
-    tmpl_body_clear: '{{time}}\n{{label}} returned to normal after {{duration}} (value {{value}}{{unit}}).\n\n-- AlertCanvas',
-    tmpl_syslog_raise: '{{severity}} {{label}} value {{value}}{{unit}} threshold {{threshold}}{{unit}}',
-    tmpl_syslog_clear: 'clear {{label}} value {{value}}{{unit}} after {{duration}}'
+    tmpl_body_clear: '{{time}}\n{{label}} returned to normal after {{duration}}.{{reading}}\n\n-- AlertCanvas',
+    tmpl_syslog_raise: '{{severity}} {{label}} {{detail}}',
+    tmpl_syslog_clear: 'clear {{label}} after {{duration}}{{reading}}'
 };
 
 function getSetting(key) {
@@ -222,6 +222,27 @@ function getSetting(key) {
     return row ? row.value : (DEFAULTS[key] !== undefined ? String(DEFAULTS[key]) : null);
 }
 function setSetting(key, value) { setSettingStmt.run(key, String(value)); }
+
+// --- migration: the default alert templates gained a kind-aware {{detail}}
+// clause (and a {{reading}} clear suffix) so value-less alarms - a device
+// that dropped out of the feed, a downed link, a reboot - stop rendering the
+// confusing "value -- (threshold --)". DEFAULTS are only a fallback, so a
+// fresh or never-customized install picks the new wording up for free; this
+// upgrades installs that persisted an OLD default verbatim (e.g. saved the
+// Settings tab once). Genuinely customized templates never match, so they
+// are left untouched.
+(function upgradeDefaultTemplates() {
+    const SUPERSEDED = {
+        tmpl_body_raise: '{{time}}\n{{label}} is {{severity}}: value {{value}}{{unit}} (threshold {{threshold}}{{unit}}).\n\n-- AlertCanvas',
+        tmpl_body_clear: '{{time}}\n{{label}} returned to normal after {{duration}} (value {{value}}{{unit}}).\n\n-- AlertCanvas',
+        tmpl_syslog_raise: '{{severity}} {{label}} value {{value}}{{unit}} threshold {{threshold}}{{unit}}',
+        tmpl_syslog_clear: 'clear {{label}} value {{value}}{{unit}} after {{duration}}'
+    };
+    for (const [key, old] of Object.entries(SUPERSEDED)) {
+        const row = getSettingStmt.get(key);
+        if (row && row.value === old) setSettingStmt.run(key, DEFAULTS[key]);
+    }
+})();
 
 // --- SMTP password encryption at rest (optional, ALERTCANVAS_SECRET) ---
 // The password must be recoverable (it's sent on every SMTP session), so this

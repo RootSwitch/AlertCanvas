@@ -792,6 +792,8 @@
                 <tr><td><span class="tmpl-var">{{event}}</span></td><td>raise, escalate, renotify, clear, or test</td><td>raise</td></tr>
                 <tr><td><span class="tmpl-var">{{time}}</span></td><td>UTC timestamp of the notification</td><td>2026-07-21 01:38:59Z</td></tr>
                 <tr><td><span class="tmpl-var">{{duration}}</span></td><td>How long the alarm has been raised (on clears: the whole incident)</td><td>5m 30s</td></tr>
+                <tr><td><span class="tmpl-var">{{detail}}</span></td><td>Plain-English reason, by kind - "value X (threshold Y)" for a breach, but "link is down" / "not reporting" for alarms with no reading. Used in the default raise body.</td><td>value 92% (threshold 90%)</td></tr>
+                <tr><td><span class="tmpl-var">{{reading}}</span></td><td>Recovered value for clear messages as " (now X)"; empty when the alarm had no numeric value. Used in the default clear body.</td><td> (now 44C)</td></tr>
                 </tbody>
             </table>
             <div class="form-grid" style="max-width:none">
