@@ -59,9 +59,21 @@ app stays small because it does one job.
 git clone https://github.com/RootSwitch/AlertCanvas.git
 cd AlertCanvas
 mkdir -p data && sudo chown 1000:1000 data
-# edit docker-compose.yml: point the second volume at your SNMPCanvas data dir
+# Point the feed mount at YOUR SNMPCanvas data dir via an override file
+# (gitignored, auto-loaded - keeps future git pulls conflict-free):
+cat > docker-compose.override.yml <<'EOF'
+services:
+  alertcanvas:
+    volumes:
+      - /srv/snmpcanvas/data:/status:ro,z
+EOF
 docker compose up -d --build
 ```
+
+Local knobs (volume paths, `ADMIN_PASSWORD`, `ALERTCANVAS_SECRET`) belong in
+`docker-compose.override.yml`, not in edits to the tracked compose file -
+Compose merges the two automatically, volume entries merge by mount path,
+and `git pull` never conflicts with your deployment.
 
 Open `http://your-host:9162`, set the admin password on the first-run page
 (or pre-set `ADMIN_PASSWORD` in the compose file), and check the Alarms page.

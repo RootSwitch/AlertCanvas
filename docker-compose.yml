@@ -25,10 +25,14 @@ services:
       # it's a no-op elsewhere.
       - ./data:/data:z
       # The feed: a READ-ONLY view of the directory where SNMPCanvas writes
-      # snmp-status.json. Point the left side at YOUR snmpcanvas data dir
-      # (its compose mounts ./data:/data, so ../snmpcanvas/data on the same
-      # host is the usual answer). AlertCanvas reads
-      # /status/snmp-status.json by default (Settings -> status file path).
+      # snmp-status.json. AlertCanvas reads /status/snmp-status.json by
+      # default (Settings -> status file path). Do NOT edit this line in
+      # place - put your real path in docker-compose.override.yml (gitignored,
+      # auto-loaded, merged by mount path) so updates pull cleanly:
+      #   services:
+      #     alertcanvas:
+      #       volumes:
+      #         - /srv/snmpcanvas/data:/status:ro,z
       - ../snmpcanvas/data:/status:ro,z
     # Make the DOCKER HOST reachable from inside the container by name -
     # for when your SMTP relay or syslog server runs on this same box (as a

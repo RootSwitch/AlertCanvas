@@ -2,6 +2,9 @@ node_modules/
 data/
 .claude/
 
+# per-deployment config (volume paths, secrets) - keeps pulls conflict-free
+docker-compose.override.yml
+
 # local reference checkouts of the sibling projects (not part of this repo)
 *-main/
 snmp-status.json
