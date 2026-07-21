@@ -219,11 +219,15 @@ async function tick() {
                     // alerts still track the live severity - nothing has been
                     // sent yet, so raising at the current level is honest.
                     const wasSeverity = row.severity;
-                    row.severity = (row.state !== 'pending' && wasSeverity === 'crit') ? 'crit' : c.severity;
+                    const sticky = row.state !== 'pending' && wasSeverity === 'crit' && c.severity !== 'crit';
+                    row.severity = sticky ? 'crit' : c.severity;
                     row.label = c.label;
                     row.value = c.value;
                     row.peak_value = peak(c.kind, row.peak_value, c.value);
-                    row.threshold = c.threshold;
+                    // The threshold sticks WITH the severity - a crit incident
+                    // must show the crit limit it crossed, not the warn limit
+                    // the value happens to sit above right now.
+                    row.threshold = sticky ? row.threshold : c.threshold;
                     row.unit = c.unit;
                     row.missing_count = 0;
                     row.last_seen_ts = now;

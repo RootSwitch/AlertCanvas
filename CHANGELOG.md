@@ -4,7 +4,9 @@
 
 - Severity is sticky at the worst level while an alarm is open: a metric
   bouncing across the crit line escalates ONCE per incident instead of on
-  every wobble, and History records the incident's true worst severity
+  every wobble, and History records the incident's true worst severity;
+  the crossed threshold sticks with it, so a crit incident always shows
+  the crit limit rather than whatever level the value last sat above
 - Metric labels append the rule kind when the name doesn't say it
   ("GPU-1 GPU (util)"), in the UI, emails, and syslog alike
 - History shows the crossed limit next to the peak value
