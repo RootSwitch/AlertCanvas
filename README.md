@@ -221,13 +221,14 @@ spelling out once:
   UPS on-battery status: the `Power` state value has to be exported like
   anything else before its default crit rule can fire. The Watching page
   is the audit - if a value is not listed there, AlertCanvas cannot see it.
-- **Device up/down needs at least one exported interface.** The
-  device-down rule keys off the feed's interface entries specifically. A
-  device that exports only sensor values (a UPS exporting battery and
-  temperature, say) freezes its metrics when it goes unreachable - honest,
-  but silent. Export one interface from every device you want up/down
-  alarms for, even if no board will ever display it; the management port
-  is fine.
+- **Device up/down needs the device in the feed - any export counts.**
+  Every device with at least one exported value (an interface, a sensor,
+  even just the uptime toggle) lands in the feed's device roster and gets
+  a down alarm when SNMP stops answering. A VM exporting only its CPU is
+  covered; a device exporting nothing is invisible - deliberately, since
+  keeping a device out of the feed is how you keep it out of everything
+  downstream. (Feeds written by SNMPCanvas builds older than schema v3
+  carry no roster; there the rule falls back to interface entries only.)
 - **Reboot detection needs the device's uptime export** toggled in
   SNMPCanvas, for the same reason.
 - **PingCanvas up/down is display, not alerting.** Both apps read the same

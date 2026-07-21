@@ -146,6 +146,35 @@ test('override with only crit set still works', () => {
     assert.strictEqual(byKey(evalOne({ metrics: [metric({ value: 60 })] }, cfg), 'metric:M1').severity, 'crit');
     assert.strictEqual(byKey(evalOne({ metrics: [metric({ value: 40 })] }, cfg), 'metric:M1').severity, null);
 });
+test('devices[] roster arms up/down for sensor-only devices (no interfaces)', () => {
+    const doc = {
+        devices: [{ name: 'vm1', host: '192.0.2.10', status: 'down' }],
+        metrics: [metric({ code: 'C9', host: 'vm1', value: 50 })]
+    };
+    const conds = evalOne(doc);
+    assert.strictEqual(byKey(conds, 'device:vm1').severity, 'crit');
+    const m = byKey(conds, 'metric:C9');
+    assert.strictEqual(m.frozen, true);      // down device suppresses its metrics
+    assert.strictEqual(m.severity, null);
+});
+test('devices[] roster: up device stays quiet', () => {
+    const doc = {
+        devices: [{ name: 'vm1', host: '192.0.2.10', status: 'up' }],
+        metrics: [metric({ code: 'C9', host: 'vm1', value: 50 })]
+    };
+    const conds = evalOne(doc);
+    assert.strictEqual(byKey(conds, 'device:vm1').severity, null);
+    assert.strictEqual(byKey(conds, 'metric:C9').frozen, false);
+});
+test('roster and interface device entries dedupe to one condition', () => {
+    const doc = {
+        devices: [{ name: 'sw1', host: '10.0.0.1', status: 'down' }],
+        interfaces: [iface({ device: { name: 'sw1', host: '10.0.0.1', status: 'down' } })]
+    };
+    const conds = evalOne(doc).filter((c) => c.key === 'device:sw1');
+    assert.strictEqual(conds.length, 1);
+    assert.strictEqual(conds[0].severity, 'crit');
+});
 test('state kind alarms at crit by default when value is 1, quiet at 0', () => {
     const m = (v) => ({ code: 'S1', kind: 'state', host: 'ups1', display: v ? 'Power On battery' : 'Power Online', value: v, unit: '' });
     const cfg = config({ thresholds: { state: { warn: null, crit: 1 } } });

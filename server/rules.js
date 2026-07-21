@@ -111,23 +111,33 @@ function evaluate(doc, config) {
     const out = [];
 
     // --- device down (deduped per host; suppresses that device's other rules) ---
+    // Preferred source: the feed's devices[] roster (schema v3) - every
+    // device with ANY exported value, so a sensor-only VM or UPS gets
+    // up/down alarms too. Feeds from older SNMPCanvas builds have no
+    // roster; the interface entries' embedded device blocks fill in, which
+    // only cover devices that export an interface.
     const downDevices = new Set();
     const seenDevices = new Set();
-    for (const i of doc.interfaces || []) {
-        const d = i.device || {};
-        const name = d.name || String(i.id || '').split(':')[0];
-        if (seenDevices.has(name)) continue;
+    const deviceRule = (name, host, status) => {
+        if (!name || seenDevices.has(name)) return;
         seenDevices.add(name);
         const rule = resolveBool(idx, config.deviceDown, null, name, 'device-down');
-        if (!rule) continue;
-        const isDown = d.status === 'down';
+        if (!rule) return;   // muted: no alarm, and its metrics evaluate normally
+        const isDown = status === 'down';
         if (isDown) downDevices.add(name);
         out.push({
             key: `device:${name}`, severity: isDown ? rule.severity : null, frozen: false,
             kind: 'device-down', host: name, code: null,
-            label: `${name} (${d.host || '?'}) device`,
+            label: `${name} (${host || '?'}) device`,
             value: null, threshold: null, unit: ''
         });
+    };
+    if (Array.isArray(doc.devices)) {
+        for (const d of doc.devices || []) deviceRule(d && d.name, d && d.host, d && d.status);
+    }
+    for (const i of doc.interfaces || []) {
+        const d = i.device || {};
+        deviceRule(d.name || String(i.id || '').split(':')[0], d.host, d.status);
     }
 
     // --- interfaces ---
@@ -267,21 +277,26 @@ function explain(doc, config) {
         };
     });
 
+    // Device roster mirrors evaluate(): the feed's devices[] when present,
+    // interface-embedded device blocks as the legacy fallback.
     const deviceSeen = new Set();
     const devices = [];
+    const addDevice = (name, ip, status) => {
+        if (!name || deviceSeen.has(name)) return;
+        deviceSeen.add(name);
+        const info = resolveBoolInfo(idx, config.deviceDown, null, name, 'device-down');
+        devices.push({
+            host: name, ip: ip || null, status: status || 'unknown',
+            rule: info.rule, source: info.source, muted: info.muted
+        });
+    };
+    if (Array.isArray(doc.devices)) {
+        for (const d of doc.devices || []) addDevice(d && d.name, d && d.host, d && d.status);
+    }
     const interfaces = [];
     for (const i of doc.interfaces || []) {
         const dev = (i.device && i.device.name) || String(i.id || '').split(':')[0];
-
-        if (!deviceSeen.has(dev)) {
-            deviceSeen.add(dev);
-            const info = resolveBoolInfo(idx, config.deviceDown, null, dev, 'device-down');
-            devices.push({
-                host: dev, ip: (i.device && i.device.host) || null,
-                status: (i.device && i.device.status) || 'unknown',
-                rule: info.rule, source: info.source, muted: info.muted
-            });
-        }
+        addDevice(dev, i.device && i.device.host, i.device && i.device.status);
 
         const down = resolveBoolInfo(idx, config.ifRules.down, i.code, dev, 'if-down');
         const level = (aspect, kind, worst, pct) => {
