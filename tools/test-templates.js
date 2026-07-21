@@ -69,6 +69,20 @@ test('device-down clear has no (value --) tail', () => {
     assert.ok(!body.includes('(now'), body);
 });
 
+// --- state alarms: no "value 1 (threshold 1)", no "(now 0)" clear tail ---
+test('state raise reads as an alarm condition, not value/threshold', () => {
+    const body = raiseBody({ kind: 'state', label: 'SRT2200 Power On battery (state)',
+        severity: 'crit', value: 1, threshold: 1, unit: '' });
+    assert.strictEqual(body, 'SRT2200 Power On battery (state) is crit: reporting an alarm condition.');
+});
+
+test('state clear has no (now 0) tail', () => {
+    const body = T.render(BODY_CLEAR, T.varsFor(
+        { kind: 'state', label: 'SRT2200 Power Online (state)', value: 0, unit: '',
+            raised_ts: 0, cleared_ts: 300 }, 'clear'));
+    assert.ok(!body.includes('(now'), body);
+});
+
 // --- the time var is UTC/Zulu and space-separated ---
 test('time renders as UTC with a trailing Z', () => {
     const { time } = T.varsFor({ kind: 'temp', value: 1, threshold: 1 }, 'raise');

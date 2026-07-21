@@ -564,7 +564,8 @@
         ['battery', 'Battery charge', '%', '<='],
         ['runtime', 'Battery runtime', 's', '<='],
         ['uptime', 'Uptime', 's', '<='],
-        ['outlet', 'Outlet state', '', '>=']
+        ['outlet', 'Outlet state', '', '>='],
+        ['state', 'Status alarm (on battery, fault)', '', '>=']
     ];
     const IF_KIND_LABEL = {
         'if-down': 'Link down', 'if-errors': 'Interface errors',

@@ -146,6 +146,12 @@ test('override with only crit set still works', () => {
     assert.strictEqual(byKey(evalOne({ metrics: [metric({ value: 60 })] }, cfg), 'metric:M1').severity, 'crit');
     assert.strictEqual(byKey(evalOne({ metrics: [metric({ value: 40 })] }, cfg), 'metric:M1').severity, null);
 });
+test('state kind alarms at crit by default when value is 1, quiet at 0', () => {
+    const m = (v) => ({ code: 'S1', kind: 'state', host: 'ups1', display: v ? 'Power On battery' : 'Power Online', value: v, unit: '' });
+    const cfg = config({ thresholds: { state: { warn: null, crit: 1 } } });
+    assert.strictEqual(byKey(evalOne({ metrics: [m(1)] }, cfg), 'metric:S1').severity, 'crit');
+    assert.strictEqual(byKey(evalOne({ metrics: [m(0)] }, cfg), 'metric:S1').severity, null);
+});
 test('meter kind (amps/volts) has no default threshold but honors an override', () => {
     const m = { code: 'A1', kind: 'meter', host: 'pdu1', display: 'Phase L1 15 A', value: 15, unit: 'A' };
     // No universal number for a raw reading - a meter never alarms by default.

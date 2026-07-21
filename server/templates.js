@@ -13,6 +13,10 @@ const VARS = ['label', 'host', 'metric', 'kind', 'code', 'value', 'unit',
 // "value -- (threshold --)" the generic template used to produce.
 function detailFor(alert) {
     const unit = alert.unit || '';
+    // Binary status alarms first: their value/threshold are 1/1, and
+    // "value 1 (threshold 1)" helps no one. The label already carries the
+    // device's own wording ("Power On battery").
+    if (alert.kind === 'state') return 'reporting an alarm condition';
     if (alert.value != null && alert.threshold != null) {
         return `value ${alert.value}${unit} (threshold ${alert.threshold}${unit})`;
     }
@@ -64,7 +68,8 @@ function varsFor(alert, event) {
         detail: detailFor(alert),
         // Recovered reading for clear messages; empty (not "--") when the
         // alarm had no numeric value, so a device-down clear reads cleanly.
-        reading: alert.value == null ? '' : ` (now ${alert.value}${alert.unit || ''})`
+        // Binary state alarms skip it too - "(now 0)" adds nothing.
+        reading: (alert.value == null || alert.kind === 'state') ? '' : ` (now ${alert.value}${alert.unit || ''})`
     };
 }
 

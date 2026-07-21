@@ -160,7 +160,8 @@ const DEFAULT_THRESHOLDS = {
     power: null,
     outlet: null,
     uptime: null,
-    meter: null        // amps/volts/etc - no universal number; alert via override
+    meter: null,       // amps/volts/etc - no universal number; alert via override
+    state: { warn: null, crit: 1 }   // 1 = alarm (on battery, fault) - universally alert-worthy
 };
 
 const DEFAULT_IF_RULES = {
