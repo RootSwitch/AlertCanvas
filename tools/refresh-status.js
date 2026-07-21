@@ -26,7 +26,7 @@ function opts(name) {
 const opt = (name, dflt) => opts(name)[0] ?? dflt;
 const has = (name) => args.includes('--' + name);
 
-const inFile = opt('in', path.join(__dirname, '..', 'snmp-status.json'));
+const inFile = opt('in', path.join(__dirname, '..', 'samples', 'snmp-status.json'));
 const outFile = opt('out', path.join(__dirname, '..', 'data', 'live.json'));
 
 const doc = JSON.parse(fs.readFileSync(inFile, 'utf8'));

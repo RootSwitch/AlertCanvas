@@ -76,6 +76,12 @@ function destroySession(token) {
     if (token) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha256(token));
 }
 
+// After a password change: every session except the one making the change.
+function destroyOtherSessions(token) {
+    if (token) db.prepare('DELETE FROM sessions WHERE token_hash != ?').run(sha256(token));
+    else db.prepare('DELETE FROM sessions').run();
+}
+
 function pruneSessions() {
     db.prepare('DELETE FROM sessions WHERE expires_ts <= ?').run(Math.floor(Date.now() / 1000));
 }
@@ -115,9 +121,19 @@ const LOCKOUT_MS = 60 * 1000;
 
 function loginAllowed(ip) {
     const f = failures.get(ip);
-    return !f || !f.lockedUntil || f.lockedUntil <= Date.now();
+    if (!f) return true;
+    if (f.lockedUntil && f.lockedUntil <= Date.now()) { failures.delete(ip); return true; }
+    return !f.lockedUntil;
 }
 function recordLoginFailure(ip) {
+    // Keyed by client IP (or the XFF value under TRUST_PROXY), so the map is
+    // attacker-growable - sweep expired entries before it matters.
+    if (failures.size > 10000) {
+        const now = Date.now();
+        for (const [k, v] of failures) {
+            if (!v.lockedUntil || v.lockedUntil <= now) failures.delete(k);
+        }
+    }
     const f = failures.get(ip) || { count: 0, lockedUntil: 0 };
     f.count++;
     if (f.count >= MAX_FAILURES) { f.count = 0; f.lockedUntil = Date.now() + LOCKOUT_MS; }
@@ -127,7 +143,7 @@ function recordLoginSuccess(ip) { failures.delete(ip); }
 
 module.exports = {
     passwordIsSet, setPassword, checkPassword, seedFromEnv,
-    createSession, validateSession, destroySession, pruneSessions,
+    createSession, validateSession, destroySession, destroyOtherSessions, pruneSessions,
     sessionCookie, clearCookie, tokenFromRequest,
     loginAllowed, recordLoginFailure, recordLoginSuccess
 };

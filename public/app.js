@@ -54,10 +54,13 @@
         return ts ? new Date(ts * 1000).toLocaleString() : '-';
     }
     // Values: seconds read better as durations (runtime/uptime kinds).
+    // Escaped on the way out: `unit` comes verbatim from the feed file, and
+    // this is the one feed field that reaches innerHTML without esc() at the
+    // call sites.
     function fmtValue(value, unit) {
         if (value == null) return '--';
         if (unit === 's') return fmtDuration(value);
-        return `${value}${unit || ''}`;
+        return esc(`${value}${unit || ''}`);
     }
 
     // Code chips render as paste-ready {code} tokens (PingCanvas board
@@ -126,6 +129,9 @@
         // a background poller must never do.
         try {
             const res = await fetch('/api/status');
+            // Logged out / session expired: a status-light tab must stop
+            // shouting stale counts while showing the login page.
+            if (res.status === 401) { setTabState(0, null); return; }
             if (!res.ok) return;
             const s = await res.json();
             setTabState((s.counts.active || 0) + (s.counts.clearing || 0), s.worstActive);
@@ -169,9 +175,28 @@
     // ===== router =====
     window.addEventListener('hashchange', route);
 
+    // View-guard helpers: an auto-refresh tick (or a slow fetch resolving
+    // after the user navigated away) must never paint over the current view
+    // or re-arm the wrong timer - the sibling apps guard the same way.
+    const onAlarmsView = () => { const h = location.hash; return h === '' || h === '#/' || h.startsWith('#/alarms'); };
+    const onWatchingView = () => location.hash.startsWith('#/watching');
+
+    function renderFetchError(title, e) {
+        $main.innerHTML = `
+        <div class="page-head"><h1>${esc(title)}</h1></div>
+        <div class="panel"><div class="error-text">Could not reach the server (${esc(e.message)}). Retrying shortly - or reload the page.</div></div>`;
+    }
+
     async function route() {
         setAutoRefresh(null);
-        const session = await GET('/api/session');
+        let session;
+        try {
+            session = await GET('/api/session');
+        } catch (e) {
+            renderFetchError('AlertCanvas', e);
+            setTimeout(route, 5000); // self-heal once the server is back
+            return;
+        }
         if (!session.authenticated) { renderLogin(session.needsSetup); return; }
 
         const hash = location.hash || '#/alarms';
@@ -226,12 +251,30 @@
         return `<span class="sev ${cls}">${esc(a.severity)}</span>${extra ? `<span class="muted small">${extra}</span>` : ''}`;
     }
 
+    // The shared refresh guard: never repaint a view the user has left, and
+    // never yank the DOM out from under an open dropdown or half-typed field.
+    function guardedRefresh(onView, render, ms) {
+        setAutoRefresh(() => {
+            if (!onView()) return;
+            const ae = document.activeElement;
+            if (ae && $main.contains(ae) && (ae.tagName === 'SELECT' || ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+            render();
+        }, ms);
+    }
+
     async function renderAlarms() {
         setNav('alarms', true);
         let status, alerts;
         try {
             [status, { alerts }] = await Promise.all([GET('/api/status'), GET('/api/alerts')]);
-        } catch (e) { return; }
+        } catch (e) {
+            if (e.message === 'authentication required') return;
+            if (!onAlarmsView()) return;
+            renderFetchError('Alarms', e);
+            guardedRefresh(onAlarmsView, renderAlarms, 10000); // self-heal
+            return;
+        }
+        if (!onAlarmsView()) return; // user navigated away mid-fetch
 
         setTabState((status.counts.active || 0) + (status.counts.clearing || 0), status.worstActive);
 
@@ -317,7 +360,7 @@
                 renderAlarms();
             });
         }
-        setAutoRefresh(renderAlarms, 10000);
+        guardedRefresh(onAlarmsView, renderAlarms, 10000);
     }
 
     // ===== watching =====
@@ -356,7 +399,17 @@
 
     async function renderWatching() {
         setNav('watching', true);
-        const [w, status] = await Promise.all([GET('/api/watching'), GET('/api/status')]);
+        let w, status;
+        try {
+            [w, status] = await Promise.all([GET('/api/watching'), GET('/api/status')]);
+        } catch (e) {
+            if (e.message === 'authentication required') return;
+            if (!onWatchingView()) return;
+            renderFetchError('Watching', e);
+            guardedRefresh(onWatchingView, renderWatching, 30000); // self-heal
+            return;
+        }
+        if (!onWatchingView()) return; // user navigated away mid-fetch
 
         if (!w.available) {
             $main.innerHTML = `<div class="page-head"><h1>Watching</h1></div>
@@ -390,10 +443,18 @@
                 ${aspectCell(i.errors, 'pps')}
                 ${aspectCell(i.discards, 'pps')}
                 ${aspectCell(i.util, '%')}
-                <td>${stateBadge(i.down.current === 'alarm' ? 'alarm'
-                    : [i.errors, i.discards, i.util].some((a) => a.current === 'crit') ? 'crit'
-                    : [i.errors, i.discards, i.util].some((a) => a.current === 'warn') ? 'warn'
-                    : i.down.current, i.down.muted)}</td>
+                <td>${(() => {
+                    // Worst of the four aspects; "muted" only when EVERY
+                    // aspect is muted - one muted rule must not hide a live
+                    // warn on another.
+                    const aspects = [i.errors, i.discards, i.util];
+                    const worst = i.down.current === 'alarm' || aspects.some((a) => a.current === 'crit') ? 'crit'
+                        : aspects.some((a) => a.current === 'warn') ? 'warn'
+                        : aspects.some((a) => a.current === 'ok') || i.down.current === 'ok' ? 'ok'
+                        : null;
+                    const allMuted = i.down.muted && aspects.every((a) => a.muted);
+                    return stateBadge(worst, allMuted);
+                })()}</td>
             </tr>`;
             }).join('');
 
@@ -437,8 +498,14 @@
     // ===== history =====
     async function renderHistory() {
         setNav('history', true);
-        const [{ alerts }, { notifications }] = await Promise.all([
-            GET('/api/alerts/history?limit=100'), GET('/api/notifications?limit=50')]);
+        let alerts, notifications;
+        try {
+            [{ alerts }, { notifications }] = await Promise.all([
+                GET('/api/alerts/history?limit=100'), GET('/api/notifications?limit=50')]);
+        } catch (e) {
+            if (e.message !== 'authentication required') renderFetchError('History', e);
+            return;
+        }
 
         const rows = alerts.map((a) => `
             <tr>
@@ -510,10 +577,28 @@
         return v === '' ? null : Number(v);
     }
 
-    async function renderSettings() {
+    // Everything typed into the settings forms, keyed by element id - so a
+    // re-render (after an override add/delete) can put unsaved edits back
+    // instead of silently wiping them.
+    function snapshotSettingsInputs() {
+        const vals = {};
+        for (const el of $main.querySelectorAll('input[id], select[id], textarea[id]')) {
+            if (el.id.startsWith('ov-')) continue; // the add-override form resets by design
+            vals[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+        }
+        return vals;
+    }
+
+    async function renderSettings(restore) {
         setNav('settings', true);
-        const [s, { overrides }, sources] = await Promise.all([
-            GET('/api/settings'), GET('/api/overrides'), GET('/api/sources')]);
+        let s, overrides, sources;
+        try {
+            [s, { overrides }, sources] = await Promise.all([
+                GET('/api/settings'), GET('/api/overrides'), GET('/api/sources')]);
+        } catch (e) {
+            if (e.message !== 'authentication required') renderFetchError('Settings', e);
+            return;
+        }
 
         const th = s.thresholds || {};
         const kindRows = KIND_INFO.map(([kind, name, unit, dir]) => {
@@ -617,7 +702,7 @@
                 <thead><tr><th>Target</th><th>Kind</th><th class="num">Warn</th><th class="num">Crit / severity</th><th>On</th><th>Note</th><th></th></tr></thead>
                 <tbody>${ovRows}</tbody>
             </table>`}
-            <div class="form-actions" style="flex-wrap:wrap">
+            <div class="form-actions">
                 <select id="ov-src" style="max-width:340px">
                     <option value="">Add override: pick a target...</option>
                     ${srcOptions}
@@ -731,6 +816,7 @@
             <div class="form-grid">
                 <label>Current password</label><input type="password" id="pw-cur" autocomplete="current-password">
                 <label>New password</label><input type="password" id="pw-new" autocomplete="new-password">
+                <label>Confirm new</label><input type="password" id="pw-new2" autocomplete="new-password">
             </div>
             <div class="form-actions"><button id="pw-save">Change password</button><span id="pw-msg"></span></div>
             <div class="form-grid" style="margin-top:14px">
@@ -745,11 +831,25 @@
         </div>`;
 
         const $ = (id) => document.getElementById(id);
+
+        // Put back anything the user had typed before a partial re-render.
+        if (restore) {
+            for (const [id, val] of Object.entries(restore)) {
+                const el = $(id);
+                if (!el) continue;
+                if (el.type === 'checkbox') el.checked = val; else el.value = val;
+            }
+        }
+
+        const flashTimers = {};
         const flash = (id, ok, msg) => {
             const el = $(id);
+            // A pending "Sending..." auto-clear must not erase the result
+            // that replaces it.
+            clearTimeout(flashTimers[id]);
             el.className = ok ? 'ok-text' : 'error-text';
             el.textContent = msg;
-            if (ok) setTimeout(() => { el.textContent = ''; }, 2500);
+            if (ok) flashTimers[id] = setTimeout(() => { el.textContent = ''; }, 4000);
         };
         const save = async (msgId, body, after) => {
             try {
@@ -859,7 +959,7 @@
                 severity: $('ov-sev').value,
                 note: $('ov-note').value
             };
-            try { await api('POST', '/api/overrides', body); renderSettings(); }
+            try { await api('POST', '/api/overrides', body); renderSettings(snapshotSettingsInputs()); }
             catch (e) { flash('ov-msg', false, e.message); }
         });
 
@@ -948,10 +1048,11 @@
 
         // --- security & data ---
         $('pw-save').addEventListener('click', async () => {
+            if ($('pw-new').value !== $('pw-new2').value) { flash('pw-msg', false, 'New passwords do not match.'); return; }
             try {
                 await api('POST', '/api/settings/password', { current: $('pw-cur').value, next: $('pw-new').value });
                 flash('pw-msg', true, 'Password changed.');
-                $('pw-cur').value = $('pw-new').value = '';
+                $('pw-cur').value = $('pw-new').value = $('pw-new2').value = '';
             } catch (e) { flash('pw-msg', false, e.message); }
         });
         $('save-data').addEventListener('click', () => save('data-msg', { retentionDays: $('set-retentionDays').value }));

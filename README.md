@@ -1,66 +1,112 @@
-# AlertCanvas
+# AlertCanvas - Basic Threshold Alerting
 
-Lightweight self-hosted alerting for the Canvas suite: watch the
-`snmp-status.json` file that [SNMPCanvas](https://github.com/RootSwitch/SNMPCanvas)
-exports, evaluate thresholds, and raise/clear alarms by **email** and
-**syslog** - with a small web UI for active alarms, history, and settings.
+> A lightweight, self-hostable alerting companion for home labs and small
+> networks: watch the values SNMPCanvas exports, hold them against your
+> thresholds, and get an email, push, or syslog message when one crosses -
+> and again when it recovers.
 
-AlertCanvas deliberately alerts only on values you have explicitly chosen to
-export from SNMPCanvas. That keeps it tiny: no per-vendor MIB knowledge, no
-discovery, no agents - just the numbers you already decided matter, a
-threshold for each kind, and a notification when one crosses.
+AlertCanvas alerts only on values you have explicitly chosen to export from
+SNMPCanvas. That keeps it tiny: no per-vendor MIB knowledge, no discovery,
+no agents - just the numbers you already decided matter, a threshold for
+each kind, and a notification when one crosses. It is part of the Canvas
+family: [**CrossCanvas**](https://github.com/RootSwitch/CrossCanvas) draws
+your network, [**PingCanvas**](https://github.com/RootSwitch/PingCanvas)
+turns those diagrams into a live reachability wall,
+[**SNMPCanvas**](https://github.com/RootSwitch/SNMPCanvas) gathers the
+performance history and exports chosen values to `snmp-status.json`,
+[**SyslogCanvas**](https://github.com/RootSwitch/SyslogCanvas) remembers
+what your devices said - and AlertCanvas is the one that taps you on the
+shoulder.
 
-- **One container, two dependencies** (`better-sqlite3`, `nodemailer`), no
-  framework, no build step
-- **Raise and clear notifications** with anti-flap confirmation (N consecutive
-  scans to raise, N to clear), warn/crit severities, and escalation
-- **Email (SMTP)** - STARTTLS / implicit TLS / plaintext, auth, test button,
-  failed sends retried with backoff and surfaced in the UI
+The family's small-footprint ethos carries over: one container, one SQLite
+file, two runtime dependencies, and a frontend that is plain HTML/CSS/JS
+with no build step.
+
+<!-- hero image, once captured from a production instance:
+![Four AlertCanvas themes, four views: ...](docs/hero-quadrants.png) -->
+
+## How it works
+
+```
+SNMPCanvas ──► snmp-status.json ──► AlertCanvas ──► email / ntfy / syslog
+                     │                   │
+                     └──► PingCanvas     └──► alarms, history & web UI
+```
+
+One Node process does everything: a scanner reads the feed on an interval,
+holds every exported value against your thresholds, walks alarms through an
+anti-flap state machine in SQLite, and the same process serves the UI and
+sends the notifications. SNMPCanvas keeps collecting, PingCanvas keeps
+displaying; AlertCanvas only ever reads the file they share.
+
+## Features
+
+- **Raise and clear notifications** with anti-flap confirmation (N
+  consecutive scans to raise, N to clear), warn/crit severities, and
+  one-per-incident escalation - severity and the crossed threshold stick at
+  the incident's worst, so a value bouncing on the crit line can't spam you.
+- **Email (SMTP)** - STARTTLS / implicit TLS / plaintext, auth, a test
+  button, and failed sends retried with backoff and surfaced in the UI.
 - **Syslog (RFC 5424 over UDP)** - lands first-class in
-  [SyslogCanvas](https://github.com/RootSwitch/SyslogCanvas) or any receiver,
-  with structured data carrying host/kind/severity/code
-- **ntfy push** - point it at ntfy.sh or a self-hosted server for phone
-  notifications; crit pushes as urgent priority, warn as high
+  [SyslogCanvas](https://github.com/RootSwitch/SyslogCanvas) or any
+  receiver, with structured data carrying host/kind/severity/code.
+- **ntfy push** - point it at [ntfy.sh](https://ntfy.sh) or a self-hosted
+  server for phone notifications; crit pushes as urgent priority, warn as
+  high.
+- **Watching page** - every exported value with the rule that applies to it
+  and where that rule came from (default, override, or muted), so
+  misconfiguration is visible instead of silent.
+- **Per-target overrides** - a different limit for one hot-running sensor,
+  or a mute for a noisy port, keyed by the feed's stable codes.
+- **Stale-feed watchdog** - if SNMPCanvas stops writing, that is itself a
+  crit alarm; so is a feed the scanner cannot read or parse.
 - **Reboot detection** - an exported uptime value going backwards raises a
-  one-shot "host rebooted" event (no clear noise; sysUpTime's ~497-day wrap
-  is indistinguishable from a reboot)
+  one-shot "host rebooted" event, with no meaningless clear afterwards.
 - **Test alarm** - fire a synthetic alarm through the real pipeline
   (templates, every enabled channel, raise then clear) so you know what the
-  2 AM email will look like before 2 AM does
-- **Stale-feed watchdog** - if SNMPCanvas stops writing, that is itself an alarm
-- **Watching page** - every exported value with the rule that applies to it
-  (and where it came from: default, override, or muted), so misconfiguration
-  is visible instead of silent
-- **Maintenance silence** - suppress notifications for 1h to 7d while alarms
-  keep tracking; suppressed sends are logged, and the window can't be forgotten
-  because it is bounded
-- **Status in the browser tab** - the title shows the raised-alarm count and
-  the favicon's canvas washes amber/red, so a pinned tab reads at a glance
-- **Single shared password** (scrypt), sessions in SQLite, automatic HTTPS
-  when a certificate is present
-- The Canvas family look: same themes as CrossCanvas, same easel - with a red
-  exclamation mark on the canvas
+  2 AM email will look like before 2 AM does.
+- **Maintenance silence** - suppress notifications for 1 hour to 7 days
+  while alarms keep tracking; suppressed sends are logged, and the window
+  is bounded so it cannot be forgotten.
+- **Status in the browser tab** - the title carries the raised-alarm count
+  and the favicon's canvas washes amber or red, so a pinned tab reads at a
+  glance.
+- **Alert formatting** - editable subject/body/syslog templates with
+  `{{variable}}` substitution and a built-in reference table.
+- **Single shared password** for the UI (scrypt-hashed), sessions, login
+  rate limiting, and one-click database backups from the Settings page.
+- **29 themes** carried over from CrossCanvas's palette family, grouped the
+  same way (Paper / Warm / Cool / Night / Screen).
 
-## How it fits the suite
+## Small on purpose
 
-```
-SNMPCanvas  --writes-->  snmp-status.json  --read by-->  PingCanvas (NOC wall)
-                                            --read by-->  AlertCanvas (this)
-```
-
-SNMPCanvas polls devices and exports selected interfaces and host metrics
-(CPU, temperature, UPS load, battery, runtime, ...) to `snmp-status.json` on
-its data volume. PingCanvas displays them; AlertCanvas alerts on them. Each
-app stays small because it does one job.
+AlertCanvas is intentionally a threshold engine with a clear window onto
+it: scan, compare, notify, remember. Per-severity recipient routing, HTML
+mail, alert correlation, dashboards, and auto-remediation aren't on the
+roadmap - they are jobs for bigger systems, and the reason this app exists
+is that those systems are overkill for a homelab. Keeping the moving parts
+few is a design choice - and if you want it to become something bigger, the
+license makes forking genuinely easy.
 
 ## Quick start (Docker)
 
-```sh
+```yaml
+# docker-compose.yml (in the repo; abridged)
+services:
+  alertcanvas:
+    build: .        # or a published image once available
+    ports: ["9162:9162"]
+    volumes:
+      - ./data:/data:z                      # SQLite db + certs
+      - ../snmpcanvas/data:/status:ro,z     # SNMPCanvas's data dir, read-only
+    restart: unless-stopped
+```
+
+```
 git clone https://github.com/RootSwitch/AlertCanvas.git
 cd AlertCanvas
-mkdir -p data && sudo chown 1000:1000 data
-# Point the feed mount at YOUR SNMPCanvas data dir via an override file
-# (gitignored, auto-loaded - keeps future git pulls conflict-free):
+mkdir -p data && sudo chown 1000:1000 data   # container runs as uid 1000
+# point the feed mount at YOUR SNMPCanvas data dir via an override file:
 cat > docker-compose.override.yml <<'EOF'
 services:
   alertcanvas:
@@ -70,25 +116,75 @@ EOF
 docker compose up -d --build
 ```
 
-Local knobs (volume paths, `ADMIN_PASSWORD`, `ALERTCANVAS_SECRET`) belong in
-`docker-compose.override.yml`, not in edits to the tracked compose file -
-Compose merges the two automatically, volume entries merge by mount path,
-and `git pull` never conflicts with your deployment.
+Open `http://your-host:9162`, set the admin password on the first-run page,
+and check the Alarms page. That's the whole install. (The default port is a
+nod to SNMP's trap port UDP/162 - the notification side of SNMP - picked to
+coexist quietly with common home-lab neighbors like Uptime Kuma on 3001,
+CrossCanvas/PingCanvas on 8080/8443, SNMPCanvas on 9161, and SyslogCanvas
+on 9514.)
 
-Open `http://your-host:9162`, set the admin password on the first-run page
-(or pre-set `ADMIN_PASSWORD` in the compose file), and check the Alarms page.
-If the feed mount is right you'll see "All quiet"; if not, the stale-feed
-watchdog will tell you within a couple of minutes - which is also your proof
-that alerting works.
+Two first-run notes: the setup page belongs to whoever reaches the port
+first, so on anything but a trusted segment either set `ADMIN_PASSWORD` in
+the override file or claim the page immediately after `up -d`. And if the
+feed mount is wrong you'll know within a couple of minutes - the stale-feed
+watchdog raises, which doubles as proof that alerting works.
 
-Then, under Settings:
+Then, under Settings: **Email** (SMTP server, from/to, Send test email),
+optionally **Syslog** and **ntfy push**, and **Thresholds** - the defaults
+are sane for a homelab; adjust to taste and add per-target overrides for
+the odd sensor that runs hot.
 
-1. **Email** - SMTP server, from/to, Send test email.
-2. **Syslog** (optional) - point it at SyslogCanvas (`host:514`) or any syslog
-   server, Send test message.
-3. **Thresholds** - the defaults are sane for a homelab (CPU 85/95%,
-   temp 45/55C, UPS load 70/90%, battery 50/20%, runtime 10m/5m); adjust to
-   taste, and add per-target overrides for the odd sensor that runs hot.
+### HTTPS
+
+Run the included script once on the docker host, then restart:
+
+```
+./tools/gen-cert.sh 192.168.1.50 nas.lan    # your host's IPs / names
+docker compose restart
+```
+
+It writes a self-signed cert to `data/certs/server.crt` + `server.key`; the
+server detects the pair at startup and switches to HTTPS on the same port
+(session cookies become `Secure` automatically). Prefer a real certificate?
+Place your own PEM pair at those two paths (or point `TLS_CERT`/`TLS_KEY`
+elsewhere) - nothing else changes. Delete the files to fall back to HTTP.
+If HTTPS doesn't come up, the pair usually isn't readable by uid 1000
+(`sudo chown -R 1000:1000 data/certs` fixes that).
+
+### Customizing the deployment
+
+Put host-specific settings (volume paths, environment variables, ports) in
+a `docker-compose.override.yml` next to the compose file - Docker Compose
+merges it automatically (volume entries merge by container mount path), and
+it's gitignored so updates never conflict with your edits:
+
+```yaml
+# docker-compose.override.yml (example)
+services:
+  alertcanvas:
+    volumes:
+      - /srv/snmpcanvas/data:/status:ro,z
+    environment:
+      - TZ=America/Chicago
+      #- ADMIN_PASSWORD=change-me
+      #- ALERTCANVAS_SECRET=a-long-random-string
+```
+
+### Updating an existing install
+
+```
+git pull
+sudo docker compose up -d --build
+```
+
+The data directory is a bind mount, so alarms, history, and settings ride
+through every update (schema migrations run automatically on first boot).
+An occasional `sudo docker image prune -f` tidies old layers.
+
+### Running without Docker
+
+Node 20+: `npm install && npm start` (listens on `:9162`, data in `./data`,
+feed path in Settings or `STATUS_FILE`).
 
 ## What it can alert on
 
@@ -100,62 +196,54 @@ Then, under Settings:
 | Battery charge | warn 50, crit 20 (%) | <= |
 | Battery runtime | warn 600, crit 300 (s) | <= |
 | Fan rpm, power draw, outlet, uptime | off (no universal number) | override-only |
+| Reboot (exported uptime goes backwards) | warn, one-shot event | - |
 | Interface link down (oper down while admin up) | crit | - |
 | Interface errors / discards | 1/10 and 5/50 pkt/s | >= |
 | Interface utilization (% of link speed) | warn 80, crit 95 | >= |
 | Device down (SNMP unreachable) | crit | - |
-| Stale or missing status file | crit | - |
+| Stale, missing, or unreadable status file | crit | - |
 
-Per-kind defaults apply everywhere; **overrides** (Settings) change or mute a
-single exported value (by its stable code) or one host+kind. A down device
-raises one alarm, not one per interface.
-
-### Anti-flap
-
-A threshold crossing must hold for `raise scans` consecutive scans (default 2
-at 30 s) before anything is sent, and a recovery must hold for `clear scans`
-scans before the all-clear goes out. Unreadable values (`null`) freeze an
-alarm rather than clearing it; a value that disappears from the feed entirely
-auto-clears after a configurable number of scans. Warn-to-crit escalation
-re-notifies once. An optional reminder interval re-sends unacknowledged
-active alarms; the Ack button silences an alarm you know about until it
-clears.
+Per-kind defaults apply everywhere; overrides change or mute a single
+exported value (by its stable code) or one host+kind. A down device raises
+one alarm, not one per interface. Unreadable values (`null` or garbage)
+freeze an alarm rather than clearing it; a value that disappears from the
+feed entirely auto-clears after a configurable number of scans.
 
 ## Notifications
 
 Email is plain text with editable **alert formatting templates**
-(`{{host}} {{metric}} {{value}} {{threshold}} {{severity}} {{duration}} ...`).
-Syslog messages are RFC 5424 with a structured-data block:
+(`{{host}} {{metric}} {{value}} {{threshold}} {{severity}} {{duration}}`
+and friends - the Settings page carries a full reference table). Syslog
+messages are RFC 5424 with a structured-data block:
 
 ```
-<130>1 2026-07-20T23:09:29Z nas alertcanvas 7316 ESCALATE
+<130>1 2026-07-20T23:09:29Z alertcanvas alertcanvas 1 ESCALATE
   [alertc@0 event="escalate" severity="crit" kind="temp" host="TrueNASMain" code="8PTS"]
   crit TrueNASMain Temp value 60C threshold 55C
 ```
 
 Facility and the crit/warn/clear severity mapping are configurable. Failed
-emails are retried with exponential backoff (1 min doubling, 15 min cap) and
-shown as a banner plus a notifications log entry; syslog and ntfy are
+emails are retried with exponential backoff (1 min doubling, 15 min cap)
+and shown as a banner plus a notifications log entry; syslog and ntfy are
 fire-and-forget by design - email is the guaranteed channel.
 
 ### SMTP relay / syslog server on the SAME docker host
 
-The compose file maps `host.docker.internal` to the host, so when your relay
-or syslog server runs on the AlertCanvas box itself (as a host service or a
-sibling container with a published port), set Settings -> Email/Syslog server
-to `host.docker.internal` - no bridge IPs to look up, and it survives network
-recreations. Two things to check on the host side:
+The compose file maps `host.docker.internal` to the host, so when your
+relay or syslog server runs on the AlertCanvas box itself (as a host
+service or a sibling container with a published port), set Settings ->
+Email/Syslog server to `host.docker.internal`. Two things to check on the
+host side:
 
 1. Container traffic arrives from the docker bridge subnet (`172.x`), not
-   your LAN. A relay that restricts by source network (Postfix `mynetworks`,
-   etc.) must also allow `172.16.0.0/12`, and any host firewall must accept
-   the docker bridge for those ports.
+   your LAN. A relay that restricts by source network (Postfix
+   `mynetworks`, etc.) must also allow `172.16.0.0/12`, and any host
+   firewall must accept the docker bridge for those ports.
 2. The service must listen on `0.0.0.0` (or the bridge address) - one bound
    strictly to the LAN interface IP is reachable at that LAN IP instead,
    which also works from containers as long as point 1 is satisfied.
 
-The Test buttons in Settings exercise exactly this path, so they'll tell you
-immediately whether the plumbing is right.
+The Test buttons in Settings exercise exactly this path.
 
 ### Uptime Kuma (or any external monitor)
 
@@ -164,65 +252,121 @@ immediately whether the plumbing is right.
 Kuma HTTP monitor at it and you get a free second notification path, plus a
 dead-man's switch: if AlertCanvas itself dies, Kuma notices that too.
 
-## HTTPS
-
-```sh
-./tools/gen-cert.sh 192.168.1.50 nas.lan
-docker compose restart
-```
-
-The server switches to HTTPS automatically when
-`data/certs/server.crt` + `server.key` exist (or set `TLS_CERT`/`TLS_KEY`).
-For a real certificate, drop your own PEM pair there, or front the container
-with a reverse proxy and set `TRUST_PROXY=1` so login rate-limiting sees real
-client IPs.
-
-## Environment variables
+## Configuration (environment variables)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `9162` | listen port |
-| `ALERTCANVAS_DATA` | `/data` (container) | SQLite DB + certs |
-| `STATUS_FILE` | `/status/snmp-status.json` | initial feed path (Settings can change it) |
-| `ADMIN_PASSWORD` | - | seed the password on first boot |
-| `ALERTCANVAS_SECRET` | - | encrypt the stored SMTP password (AES-256-GCM) |
-| `TLS_CERT` / `TLS_KEY` | `<data>/certs/server.crt|key` | HTTPS pair |
-| `COOKIE_SECURE` | auto (`1` under HTTPS) | Secure flag on the session cookie |
-| `TRUST_PROXY` | - | `1` = honor `X-Forwarded-For` for the login limiter |
-| `TZ` | `Etc/UTC` | log timestamps |
+| `PORT` | `9162` | HTTP/HTTPS listen port |
+| `ALERTCANVAS_DATA` | `/data` | Directory for the SQLite db and certs |
+| `STATUS_FILE` | `/status/snmp-status.json` | Initial feed path (Settings can change it) |
+| `TLS_CERT` / `TLS_KEY` | `$DATA/certs/server.crt|key` | PEM cert/key pair; HTTPS turns on when both exist |
+| `ADMIN_PASSWORD` | - | Pre-set the UI password (otherwise first-run setup page) |
+| `ALERTCANVAS_SECRET` | - | If set, the SMTP password and ntfy token are AES-256-GCM encrypted at rest |
+| `COOKIE_SECURE` | auto | `Secure` cookies: on with HTTPS, off with HTTP; set to override |
+| `TRUST_PROXY` | - | `1` = honor `X-Forwarded-For` for the login limiter (behind a reverse proxy) |
+| `TZ` | UTC | Timezone for log timestamps |
 
-## Local development (no Docker)
+Scan interval, thresholds, overrides, channels, and templates are set in
+the UI (Settings) and stored in the database.
 
-```sh
+## Security posture
+
+AlertCanvas is a networked app with a small, deliberate threat model:
+
+- The web UI has one shared password and is designed for a trusted network
+  segment; a reverse proxy adds TLS termination and extra auth cleanly if
+  you want to go further. The first-run setup page belongs to whoever
+  reaches it first - claim it promptly or pre-set `ADMIN_PASSWORD`.
+  Changing the password evicts every other session.
+- AlertCanvas holds no device credentials at all - its secrets are the SMTP
+  password and the optional ntfy token. By default the protection is
+  filesystem permissions on the `/data` volume; set `ALERTCANVAS_SECRET`
+  and they are AES-256-GCM encrypted at rest instead. The same applies to
+  **database backups** downloaded from Settings: without the secret, the
+  `.db` file carries the SMTP password in the clear - treat it accordingly.
+- The feed mount is read-only and AlertCanvas never writes to it; the feed
+  is data, not configuration, and a malformed feed degrades to a watchdog
+  alarm rather than a crashed scanner.
+- `/api/health` is public by design (liveness for the container
+  healthcheck and external monitors); with `?alarms=1` it adds alarm
+  *counts* only, never labels or values.
+- Outbound notifications leave the container through Docker's NAT, so
+  relays and syslog servers see the **docker host's** address (or the
+  bridge subnet for same-host services - see above).
+
+## Development
+
+```
 npm install
-npm test                # rules-engine unit tests (tools/test-rules.js)
-STATUS_FILE=./sample/snmp-status.json node server/server.js
-# or on Windows PowerShell:
-#   $env:STATUS_FILE = 'C:\path\to\snmp-status.json'; node server/server.js
+npm test                                  # rules-engine tests + charcheck
+node tools/refresh-status.js              # samples/ feed -> data/live.json, fresh timestamps
+STATUS_FILE=./data/live.json npm start    # UI on http://localhost:9162
 ```
 
-`tools/refresh-status.js` fakes a live feed from any sample file - re-stamp
-timestamps, force values, drop links, or take devices down:
+(Windows PowerShell: `$env:STATUS_FILE = '.\data\live.json'; npm start`.)
 
-```sh
-node tools/refresh-status.js --in sample.json --out data/live.json --set 8PTS=60 --ifdown V5BV
+`tools/refresh-status.js` fakes a live feed - re-stamp timestamps, force
+values, drop links, take devices down - so you can watch alarms raise and
+clear without owning a misbehaving UPS:
+
+```
+node tools/refresh-status.js --set 8PTS=60 --ifdown XA3F --devdown fw-1
+node tools/refresh-status.js --stale      # let the watchdog catch it
 ```
 
-## Notes and limitations
+### Project layout
 
-- AlertCanvas applies **its own thresholds** to the exported `value` fields;
-  the `status` stamps SNMPCanvas puts on cpu/battery are ignored (one source
-  of truth for alerting).
-- A host that exports only metrics (no interfaces) has no up/down signal in
-  the feed; if it dies its metrics go stale/vanish, which surfaces as
-  "removed from feed" rather than "device down".
-- Email is plain text, password/no-auth/app-password SMTP - no OAuth. If your
-  provider requires XOAUTH2, use an app password or a local relay.
-- Settings/thresholds/history live in one SQLite file; the **Download
-  backup** button in Settings streams a consistent snapshot of it.
-- The web UI has no per-user accounts - it's one shared password, same as the
-  rest of the suite. Keep it on a trusted network segment.
+| Path | Purpose |
+|---|---|
+| `server/server.js` | HTTP entry point: static files + API dispatch (plain `node:http`) |
+| `server/api.js` | All `/api/*` handlers |
+| `server/scanner.js` | Scan loop, alarm state machine, retries, reboot detection |
+| `server/rules.js` | Pure threshold evaluation - the part `npm test` covers |
+| `server/notify.js` | Channel dispatch + notifications log |
+| `server/smtp.js` / `syslog-out.js` / `ntfy.js` | The three channels |
+| `server/templates.js` | `{{variable}}` substitution for alert formatting |
+| `server/db.js` / `auth.js` | SQLite schema and migrations; scrypt password + sessions |
+| `public/` | The whole frontend: vanilla HTML/CSS/JS, no build step |
+| `samples/snmp-status.json` | Synthetic feed for development |
+| `tools/` | gen-cert.sh, refresh-status.js, test-rules.js, charcheck.js |
+
+Runtime dependencies:
+[`nodemailer`](https://www.npmjs.com/package/nodemailer) and
+[`better-sqlite3`](https://www.npmjs.com/package/better-sqlite3) - the
+complete list, by design.
+
+## Contributing
+
+Bug reports are welcome via Issues, and small, self-contained fixes are
+welcome as pull requests. If a threshold kind evaluates in a way that
+surprised you, an issue with the feed entry and the rule you expected to
+fire is exactly the right report.
+
+For larger features - recipient routing, HTML mail, correlation,
+dashboards - I'd rather you fork than open a big PR. AlertCanvas is
+deliberately small, the whole backend is ten readable files, and The
+Unlicense means you owe nobody anything. Build the alerter you want.
+
+## Credits
+
+AlertCanvas stands on two excellent permissively licensed libraries:
+
+- [**nodemailer**](https://github.com/nodemailer/nodemailer) by Andris
+  Reinman and contributors (MIT-0) - the SMTP client that makes alert mail
+  land on whatever relay you already run, STARTTLS quirks and all.
+- [**better-sqlite3**](https://github.com/WiseLibs/better-sqlite3) by
+  Joshua Wise and contributors (MIT) - the synchronous SQLite bindings that
+  keep the storage layer a single dependency, wrapping the public-domain
+  [SQLite](https://sqlite.org) library itself.
+
+The visual language is borrowed from
+[CrossCanvas](https://github.com/RootSwitch/CrossCanvas), AlertCanvas's
+sister project, and the feed contract belongs to
+[SNMPCanvas](https://github.com/RootSwitch/SNMPCanvas).
 
 ## License
 
-Unlicense - public domain. Do what you like; attribution appreciated.
+[The Unlicense](LICENSE) - public domain, same as CrossCanvas, PingCanvas,
+SNMPCanvas, and SyslogCanvas. Use it, fork it, ship it at work, no
+attribution required. (Dependencies keep their own licenses in
+`node_modules/` when you install or ship an image.)

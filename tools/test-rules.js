@@ -94,6 +94,28 @@ test('null value freezes, never clears or raises', () => {
     assert.strictEqual(c.frozen, true);
     assert.strictEqual(c.severity, null);
 });
+test('non-numeric metric values freeze instead of evaluating', () => {
+    // Number('') === 0 and Number(true) === 1 - neither is a reading. An
+    // empty-string battery value must not read as 0% (instant false crit).
+    for (const junk of ['', true, '42', {}]) {
+        const c = byKey(evalOne({ metrics: [metric({ kind: 'battery', value: junk })] }), 'metric:M1');
+        assert.strictEqual(c.frozen, true, `value ${JSON.stringify(junk)} should freeze`);
+        assert.strictEqual(c.severity, null);
+    }
+});
+test('garbage interface rates freeze instead of reading normal', () => {
+    const conds = evalOne({ interfaces: [iface({ inErrorsPerSec: 'abc', outErrorsPerSec: 'abc' })] });
+    assert.strictEqual(byKey(conds, 'if:I1:errors').frozen, true);
+});
+test('entries without a code are skipped, odd shapes do not throw', () => {
+    const conds = evalOne({
+        interfaces: [iface({ code: undefined }), { id: undefined, device: null, code: 'I9', name: 'x', adminStatus: 'up', operStatus: 'up', speedBps: 0 }],
+        metrics: [metric({ code: undefined })]
+    });
+    assert.strictEqual(conds.find((c) => c.key === 'metric:undefined'), undefined);
+    assert.strictEqual(conds.find((c) => c.key === 'if:undefined:down'), undefined);
+    assert.ok(byKey(conds, 'if:I9:down')); // survives missing id/device
+});
 test('unknown kind produces no condition', () => {
     const conds = evalOne({ metrics: [metric({ kind: 'mystery' })] });
     assert.strictEqual(conds.find((c) => c.key === 'metric:M1'), undefined);

@@ -141,7 +141,8 @@ const routes = [
     // counts-only - no alarm details leak without a session.
     { method: 'GET', path: /^\/api\/health$/, authRequired: false, handler: (req, res, p, body, query) => {
         const base = { ok: true, version: require('../package.json').version };
-        if (!query || query.get('alarms') === null) return ok(res, base);
+        const alarms = query && query.get('alarms');
+        if (!alarms || alarms === '0') return ok(res, base);
         const counts = db.prepare(`SELECT
             SUM(CASE WHEN severity = 'crit' THEN 1 ELSE 0 END) AS crit, COUNT(*) AS raised
             FROM alerts WHERE state IN ('active','clearing')`).get();
@@ -330,21 +331,47 @@ const routes = [
             }
             changes.push([key, v]);
         }
+        // PATCH semantics for the rule objects: keys the caller omits keep
+        // their stored values. Without the merge, a partial or non-object
+        // payload silently disables alerting rules with a 200 - the worst
+        // possible failure mode for an alerter.
+        const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+        // Both levels set must be ordered sensibly for the kind's direction,
+        // or a habits-of-the-other-direction entry (battery warn 20 / crit
+        // 50) alerts crit far too early with no hint.
+        const checkOrder = (name, kind, levels) => {
+            if (!levels || levels.warn == null || levels.crit == null) return;
+            const lowerIsBad = rules.LOWER_IS_BAD.has(kind);
+            if (lowerIsBad ? levels.warn < levels.crit : levels.warn > levels.crit) {
+                throw new Error(`${name}: warn must be ${lowerIsBad ? 'above' : 'below'} crit for this kind (it alerts ${lowerIsBad ? 'low' : 'high'}).`);
+            }
+        };
         try {
             if (body.thresholds !== undefined) {
+                if (!isPlainObject(body.thresholds)) throw new Error('thresholds must be an object');
+                let cur = {};
+                try { cur = JSON.parse(getSetting('thresholds')); } catch (_) { /* fall back to empty */ }
                 const t = {};
                 for (const kind of rules.METRIC_KINDS) {
-                    t[kind] = body.thresholds[kind] === undefined ? null : cleanLevels(body.thresholds[kind], kind);
+                    t[kind] = body.thresholds[kind] === undefined
+                        ? (cur[kind] ?? null)
+                        : cleanLevels(body.thresholds[kind], kind);
+                    checkOrder(kind, kind, t[kind]);
                 }
                 changes.push(['thresholds', JSON.stringify(t)]);
             }
             if (body.ifRules !== undefined) {
+                if (!isPlainObject(body.ifRules)) throw new Error('ifRules must be an object');
+                let cur = {};
+                try { cur = JSON.parse(getSetting('if_rules')); } catch (_) { /* fall back to empty */ }
                 const r = {
-                    down: cleanBoolRule(body.ifRules.down || {}, 'ifRules.down'),
-                    errors: cleanLevels(body.ifRules.errors ?? null, 'ifRules.errors'),
-                    discards: cleanLevels(body.ifRules.discards ?? null, 'ifRules.discards'),
-                    util: cleanLevels(body.ifRules.util ?? null, 'ifRules.util')
+                    down: body.ifRules.down === undefined ? (cur.down ?? { enabled: true, severity: 'crit' })
+                        : cleanBoolRule(body.ifRules.down, 'ifRules.down'),
+                    errors: body.ifRules.errors === undefined ? (cur.errors ?? null) : cleanLevels(body.ifRules.errors, 'ifRules.errors'),
+                    discards: body.ifRules.discards === undefined ? (cur.discards ?? null) : cleanLevels(body.ifRules.discards, 'ifRules.discards'),
+                    util: body.ifRules.util === undefined ? (cur.util ?? null) : cleanLevels(body.ifRules.util, 'ifRules.util')
                 };
+                for (const k of ['errors', 'discards', 'util']) checkOrder(`ifRules.${k}`, k, r[k]);
                 changes.push(['if_rules', JSON.stringify(r)]);
             }
             if (body.deviceDown !== undefined) {
@@ -363,16 +390,28 @@ const routes = [
         if (!auth.checkPassword(String(body.current || ''))) return json(res, 401, { error: 'Current password is wrong.' });
         if (!body.next || String(body.next).length < 8) return bad(res, 'New password must be at least 8 characters.');
         auth.setPassword(String(body.next));
+        // A password change should evict everything but the session doing
+        // the changing - otherwise a stolen cookie survives the rotation.
+        auth.destroyOtherSessions(auth.tokenFromRequest(req));
         ok(res);
     } },
 
     // Consistent snapshot of the database, streamed as a download. (Same
     // pattern as SNMPCanvas: thresholds, overrides, history, settings.)
     { method: 'GET', path: /^\/api\/backup$/, handler: (req, res) => {
-        const tmp = path.join(DATA_DIR, `.backup-${Date.now()}.db`);
-        db.prepare('VACUUM INTO ?').run(tmp);
+        // Random suffix: two same-ms requests must not collide, and every
+        // error/abort path must unlink - orphaned full-DB copies would
+        // slowly fill the data volume on a flaky connection.
+        const tmp = path.join(DATA_DIR, `.backup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.db`);
+        let stat;
+        try {
+            db.prepare('VACUUM INTO ?').run(tmp);
+            stat = fs.statSync(tmp);
+        } catch (err) {
+            fs.unlink(tmp, () => {});
+            throw err;
+        }
         const stamp = new Date().toISOString().slice(0, 10);
-        const stat = fs.statSync(tmp);
         res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
             'Content-Length': stat.size,
@@ -380,9 +419,10 @@ const routes = [
             'Cache-Control': 'no-store'
         });
         const stream = fs.createReadStream(tmp);
-        const cleanup = () => fs.unlink(tmp, () => {});
-        stream.on('close', cleanup);
+        const cleanup = () => { stream.destroy(); fs.unlink(tmp, () => {}); };
+        stream.on('close', () => fs.unlink(tmp, () => {}));
         stream.on('error', cleanup);
+        res.on('close', cleanup); // client abort mid-download
         stream.pipe(res);
     } },
 
@@ -405,7 +445,8 @@ const routes = [
             value, peak_value, threshold, unit, breach_count, first_breach_ts, raised_ts, last_seen_ts,
             notified_raise, notified_clear)
             VALUES (?, 'active', 'warn', 'test', 'alertcanvas', NULL, 'AlertCanvas test alarm',
-            42, 42, 40, '%', 1, ?, ?, ?, 1, 1)`).run(`test:${now}`, now - 60, now - 60, now);
+            42, 42, 40, '%', 1, ?, ?, ?, 1, 1)`)
+            .run(`test:${now}:${Math.random().toString(36).slice(2, 6)}`, now - 60, now - 60, now);
         const row = db.prepare('SELECT * FROM alerts WHERE id = ?').get(info.lastInsertRowid);
         await notify.dispatch('raise', row);
         db.prepare("UPDATE alerts SET state = 'cleared', cleared_ts = ?, clear_reason = 'test' WHERE id = ?")
@@ -472,7 +513,8 @@ async function handle(req, res, pathname, query) {
         let body = {};
         if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE') {
             const ct = String(req.headers['content-type'] || '');
-            const hasBody = req.headers['content-length'] && req.headers['content-length'] !== '0';
+            const hasBody = req.headers['transfer-encoding'] !== undefined ||
+                (req.headers['content-length'] && req.headers['content-length'] !== '0');
             if (hasBody && !ct.includes('application/json')) return json(res, 415, { error: 'expected application/json' });
             if (hasBody) {
                 try {

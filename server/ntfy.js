@@ -44,6 +44,7 @@ async function send(event, alert, title, message, overrides = {}) {
             },
             signal: AbortSignal.timeout(15000)
         });
+        await res.text().catch(() => ''); // drain: an unread body pins the socket
         if (!res.ok) return { ok: false, detail: `${server}: HTTP ${res.status}` };
         return { ok: true, detail: `${server}/${topic}` };
     } catch (err) {

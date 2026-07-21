@@ -2,19 +2,21 @@
 // Theme system in the CrossCanvas mold: each theme is a plain object of
 // --se-* values applied to :root. All 29 CrossCanvas palettes carry over,
 // grouped the way its picker groups them, trimmed to the chrome variables
-// SNMPCanvas uses, plus per-theme status/series colors where the defaults
-// would clash (light chromes need darker greens/reds; some accents need a
-// different second chart series to stay distinguishable).
+// AlertCanvas uses, plus per-theme status colors where the defaults would
+// clash (light chromes need darker greens/reds/ambers so severity pills and
+// banners stay legible on pale panels).
 
 (function () {
     const THEME_VARS = ['--se-panel', '--se-panel-2', '--se-input', '--se-border',
         '--se-txt', '--se-txt-dim', '--se-accent', '--se-active',
-        '--se-up', '--se-down', '--se-unknown', '--se-series-out',
+        '--se-up', '--se-down', '--se-warn', '--se-unknown', '--se-series-out',
         '--se-logo-a', '--se-logo-b'];
 
-    // Shared light-chrome status treatment: darker green/red so badges and
-    // meters keep contrast on pale panels.
-    const LIGHT_STATUS = { '--se-up': '#1e7a43', '--se-down': '#c23934' };
+    // Shared light-chrome status treatment: darker green/red/amber so badges
+    // and warn pills keep contrast on pale panels. (--se-warn is an
+    // AlertCanvas addition - warn severity is core UI here, so the default
+    // #d9a92f amber needs a legible light-theme counterpart.)
+    const LIGHT_STATUS = { '--se-up': '#1e7a43', '--se-down': '#c23934', '--se-warn': '#9a7415' };
 
     // Authored in picker order; `group` labels become <optgroup>s.
     const THEMES = {

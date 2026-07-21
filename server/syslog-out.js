@@ -48,8 +48,11 @@ function send(event, alert, message, overrides = {}) {
           ` kind="${sdEscape(alert.kind || '')}" host="${sdEscape(alert.host || '')}"` +
           (alert.code ? ` code="${sdEscape(alert.code)}"` : '') + ']'
         : `[alertc@0 event="${sdEscape(event)}"]`;
+    // One datagram is one message: a template with embedded newlines would
+    // produce a nonconforming multi-line RFC 5424 payload.
+    const flat = String(message).replace(/[\r\n]+/g, ' ');
     const line = `<${pri}>1 ${ts} ${os.hostname()} alertcanvas ${process.pid} ` +
-        `${event.toUpperCase()} ${sd} ${message}`;
+        `${event.toUpperCase()} ${sd} ${flat}`;
 
     return new Promise((resolve) => {
         const sock = dgram.createSocket('udp4');

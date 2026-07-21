@@ -102,7 +102,7 @@ function metricLabel(m) {
 }
 
 function ifLabel(i) {
-    const dev = (i.device && i.device.name) || i.id.split(':')[0];
+    const dev = (i.device && i.device.name) || String(i.id || '').split(':')[0];
     return `${dev} ${i.name}${i.alias ? ` (${i.alias})` : ''}`;
 }
 
@@ -115,7 +115,7 @@ function evaluate(doc, config) {
     const seenDevices = new Set();
     for (const i of doc.interfaces || []) {
         const d = i.device || {};
-        const name = d.name || i.id.split(':')[0];
+        const name = d.name || String(i.id || '').split(':')[0];
         if (seenDevices.has(name)) continue;
         seenDevices.add(name);
         const rule = resolveBool(idx, config.deviceDown, null, name, 'device-down');
@@ -132,7 +132,8 @@ function evaluate(doc, config) {
 
     // --- interfaces ---
     for (const i of doc.interfaces || []) {
-        const dev = (i.device && i.device.name) || i.id.split(':')[0];
+        if (!i || !i.code) continue; // no stable key - nothing to alert on
+        const dev = (i.device && i.device.name) || String(i.id || '').split(':')[0];
         const label = ifLabel(i);
         // A down device already alerted above - don't pile on per-interface
         // alerts whose real cause is the device. Freeze instead of reporting
@@ -168,7 +169,9 @@ function evaluate(doc, config) {
         for (const [aspect, kind, worst, unit] of rates) {
             const levels = resolveLevels(idx, config.ifRules[aspect], i.code, dev, kind);
             if (!levels) continue;
-            const frozen = worst < 0; // null rates (device just came up, counters settling)
+            // null rates (counters settling) AND garbage non-numbers both
+            // freeze - neither is evidence of normal.
+            const frozen = !Number.isFinite(worst) || worst < 0;
             const [sev, thr] = frozen ? [null, null] : levelSeverity(kind, worst, levels);
             out.push({
                 key: `if:${i.code}:${aspect}`, severity: sev, frozen,
@@ -180,7 +183,7 @@ function evaluate(doc, config) {
         const utilLevels = resolveLevels(idx, config.ifRules.util, i.code, dev, 'if-util');
         if (utilLevels && i.speedBps > 0) {
             const worstBps = Math.max(i.inBps ?? -1, i.outBps ?? -1);
-            const frozen = worstBps < 0;
+            const frozen = !Number.isFinite(worstBps) || worstBps < 0;
             const pct = frozen ? null : (worstBps * 100) / i.speedBps;
             const [sev, thr] = frozen ? [null, null] : levelSeverity('if-util', pct, utilLevels);
             out.push({
@@ -193,6 +196,7 @@ function evaluate(doc, config) {
 
     // --- host metrics ---
     for (const m of doc.metrics || []) {
+        if (!m || !m.code) continue; // no stable key - nothing to alert on
         if (!METRIC_KINDS.includes(m.kind)) continue; // future kinds: ignore until configured
         const levels = resolveLevels(idx, config.thresholds[m.kind], m.code, m.host, m.kind);
         if (!levels) continue;
@@ -205,13 +209,13 @@ function evaluate(doc, config) {
             });
             continue;
         }
-        const frozen = m.value == null || !Number.isFinite(Number(m.value));
-        const [sev, thr] = frozen ? [null, null] : levelSeverity(m.kind, Number(m.value), levels);
+        const frozen = typeof m.value !== 'number' || !Number.isFinite(m.value);
+        const [sev, thr] = frozen ? [null, null] : levelSeverity(m.kind, m.value, levels);
         out.push({
             key: `metric:${m.code}`, severity: sev, frozen,
             kind: m.kind, host: m.host, code: m.code,
             label: metricLabel(m),
-            value: frozen ? null : round2(Number(m.value)), threshold: thr, unit: m.unit || ''
+            value: frozen ? null : round2(m.value), threshold: thr, unit: m.unit || ''
         });
     }
 
@@ -228,11 +232,11 @@ function round2(v) { return Math.round(v * 100) / 100; }
 function detectReboots(prev, metrics) {
     const out = [];
     for (const m of metrics || []) {
-        if (m.kind !== 'uptime') continue;
-        // Number(null) is 0 - an unreadable uptime must not look like a reboot.
-        if (m.value == null) continue;
-        const v = Number(m.value);
-        if (!Number.isFinite(v)) continue;
+        if (!m || m.kind !== 'uptime' || !m.code) continue;
+        // Only a real number counts: Number(null) is 0, Number('') is 0 -
+        // an unreadable uptime must not look like a reboot.
+        if (typeof m.value !== 'number' || !Number.isFinite(m.value)) continue;
+        const v = m.value;
         const p = prev.get(m.code);
         if (p != null && v < p - 30) out.push({ code: m.code, host: m.host, from: p, to: v });
     }
@@ -250,14 +254,14 @@ function explain(doc, config) {
         const info = known
             ? resolveLevelsInfo(idx, config.thresholds[m.kind], m.code, m.host, m.kind)
             : { levels: null, source: 'none', muted: false };
-        const numeric = m.value != null && Number.isFinite(Number(m.value));
+        const numeric = typeof m.value === 'number' && Number.isFinite(m.value);
         let current = null;
         if (info.levels) {
             current = numeric ? (levelSeverity(m.kind, Number(m.value), info.levels)[0] || 'ok') : 'no-data';
         }
         return {
             code: m.code, kind: m.kind, host: m.host, display: m.display,
-            value: numeric ? round2(Number(m.value)) : null, unit: m.unit || '',
+            value: numeric ? round2(m.value) : null, unit: m.unit || '',
             lowerIsBad: LOWER_IS_BAD.has(m.kind),
             rule: info.levels, source: info.source, muted: info.muted, current
         };
@@ -267,7 +271,7 @@ function explain(doc, config) {
     const devices = [];
     const interfaces = [];
     for (const i of doc.interfaces || []) {
-        const dev = (i.device && i.device.name) || i.id.split(':')[0];
+        const dev = (i.device && i.device.name) || String(i.id || '').split(':')[0];
 
         if (!deviceSeen.has(dev)) {
             deviceSeen.add(dev);
@@ -301,7 +305,7 @@ function explain(doc, config) {
             down: {
                 rule: down.rule, source: down.source, muted: down.muted,
                 current: down.rule
-                    ? (i.operStatus === 'unknown' ? 'no-data'
+                    ? ((i.operStatus === 'unknown' || i.adminStatus === 'unknown') ? 'no-data'
                         : (i.adminStatus === 'up' && i.operStatus !== 'up') ? 'alarm' : 'ok')
                     : null
             },

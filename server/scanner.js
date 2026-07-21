@@ -56,10 +56,18 @@ function readFeed() {
     } catch (_) {
         return { ok: false, error: `${file} is not valid JSON`, doc: null };
     }
+    // Valid JSON is not necessarily a feed: `null`, a string, or an array all
+    // parse fine and would throw on property access further down - which must
+    // surface as a watchdog alarm, never as a dead scan loop.
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        return { ok: false, error: `${file} is not a status document`, doc: null };
+    }
     // Staleness: generatedAt is authoritative, but take the file mtime when it
     // is newer - a clock-skewed producer shouldn't flag a live feed stale.
-    const genMs = Date.parse(doc.generatedAt || doc.generated || '');
-    const newestMs = Math.max(Number.isNaN(genMs) ? 0 : genMs, mtimeMs || 0);
+    // Future-dated stamps are clamped to now, or a fast producer clock would
+    // delay stale detection by exactly its skew after it stops writing.
+    const genMs = Math.min(Date.parse(doc.generatedAt || doc.generated || ''), Date.now());
+    const newestMs = Math.max(Number.isNaN(genMs) ? 0 : genMs, Math.min(mtimeMs || 0, Date.now()));
     const configured = intSetting('stale_after_s', 0);
     const feedInterval = Number(doc.pollIntervalSec) > 0 ? Number(doc.pollIntervalSec) : 30;
     const staleAfterS = configured > 0 ? configured : Math.max(3 * feedInterval, 120);
@@ -117,6 +125,21 @@ async function tick() {
         const now = nowS();
         const cfg = readConfig();
         const feed = readFeed();
+
+        // Evaluation must never kill the scan loop: a feed entry with a shape
+        // rules.js can't digest degrades to "feed bad" and rides the watchdog
+        // machinery instead of aborting the tick before the watchdog exists.
+        let conditions = [];
+        if (feed.ok) {
+            try {
+                conditions = rules.evaluate(feed.doc, cfg);
+            } catch (err) {
+                feed.ok = false;
+                feed.error = `feed shape not understood: ${err.message}`;
+                conditions = [];
+            }
+        }
+
         if (feed.doc) lastDoc = feed.doc;
         lastScan = {
             ts: now, ok: feed.ok, error: feed.ok ? null : feed.error,
@@ -126,13 +149,11 @@ async function tick() {
         const raiseScans = Math.max(1, intSetting('raise_scans', 2));
         const clearScans = Math.max(1, intSetting('clear_scans', 2));
         const missingScans = Math.max(1, intSetting('missing_scans_to_clear', 20));
-
-        const conditions = feed.ok ? rules.evaluate(feed.doc, cfg) : [];
         // Heartbeat for the UI: what the last successful scan actually saw,
         // so "all quiet" is distinguishable from "not looking".
         if (feed.ok) {
             const devices = new Set();
-            for (const i of feed.doc.interfaces || []) devices.add((i.device && i.device.name) || i.id.split(':')[0]);
+            for (const i of feed.doc.interfaces || []) devices.add((i.device && i.device.name) || String(i.id || '').split(':')[0]);
             for (const m of feed.doc.metrics || []) devices.add(m.host);
             lastScan.watching = {
                 metrics: (feed.doc.metrics || []).length,
@@ -160,10 +181,12 @@ async function tick() {
             const reboots = rules.detectReboots(prev, feed.doc.metrics);
             db.transaction(() => {
                 for (const m of feed.doc.metrics || []) {
-                    // m.value == null guards Number(null) === 0: an unreadable
-                    // uptime must neither store 0 nor look like a reboot.
-                    if (m.kind === 'uptime' && m.value != null && Number.isFinite(Number(m.value))) {
-                        stmts.uptimeUpsert.run(m.code, Number(m.value), now);
+                    // Only real numbers are remembered (Number(null) === 0):
+                    // an unreadable uptime must neither store 0 nor look
+                    // like a reboot.
+                    if (m && m.kind === 'uptime' && m.code &&
+                        typeof m.value === 'number' && Number.isFinite(m.value)) {
+                        stmts.uptimeUpsert.run(m.code, m.value, now);
                     }
                 }
                 if (getSetting('reboot_detect') === '1') {
@@ -328,7 +351,9 @@ function stmtsSafe(row) {
 
 const backoffS = (attempts) => Math.min(60 * 2 ** Math.max(0, attempts - 1), 900);
 
-// Email failed earlier: retry with capped backoff until it lands.
+// Email failed earlier: retry with capped backoff until it lands. Event rows
+// (reboots, born cleared with only a raise owed) retry their raise the same
+// way - a host's one reboot notification must not die on an SMTP hiccup.
 async function retryPass(now) {
     if (getSetting('email_enabled') !== '1') return;
     const raiseRetries = db.prepare(
@@ -336,9 +361,16 @@ async function retryPass(now) {
     const clearRetries = db.prepare(
         "SELECT * FROM alerts WHERE state = 'cleared' AND notified_clear = 0 AND cleared_ts > ?")
         .all(now - 86400);
-    for (const row of [...raiseRetries, ...clearRetries]) {
+    const eventRetries = db.prepare(
+        "SELECT * FROM alerts WHERE state = 'cleared' AND clear_reason = 'event' AND notified_raise = 0 AND cleared_ts > ?")
+        .all(now - 86400);
+    for (const row of [...raiseRetries, ...eventRetries]) {
         if (row.last_attempt_ts && now - row.last_attempt_ts < backoffS(row.notify_attempts)) continue;
-        await dispatchEvent(row.state === 'cleared' ? 'clear' : 'raise', row.id, now);
+        await dispatchEvent('raise', row.id, now);
+    }
+    for (const row of clearRetries) {
+        if (row.last_attempt_ts && now - row.last_attempt_ts < backoffS(row.notify_attempts)) continue;
+        await dispatchEvent('clear', row.id, now);
     }
 }
 

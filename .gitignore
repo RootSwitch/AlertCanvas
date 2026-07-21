@@ -1,6 +1,8 @@
 node_modules/
 data/
 .claude/
+*.log
+.DS_Store
 
 # per-deployment config (volume paths, secrets) - keeps pulls conflict-free
 docker-compose.override.yml
