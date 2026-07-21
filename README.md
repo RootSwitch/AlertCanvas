@@ -194,7 +194,8 @@ feed path in Settings or `STATUS_FILE`).
 | Gauge / UPS load (`util`) | warn 70, crit 90 (%) | >= |
 | Battery charge | warn 50, crit 20 (%) | <= |
 | Battery runtime | warn 600, crit 300 (s) | <= |
-| Fan rpm, power draw, outlet, uptime | off (no universal number) | override-only |
+| Status alarm (`state`: UPS on battery, fault flags) | crit | >= |
+| Fan rpm, power draw, meters (A/V), outlet, uptime | off (no universal number) | override-only |
 | Reboot (exported uptime goes backwards) | warn, one-shot event | - |
 | Interface link down (oper down while admin up) | crit | - |
 | Interface errors / discards | 1/10 and 5/50 pkt/s | >= |
@@ -207,6 +208,55 @@ exported value (by its stable code) or one host+kind. A down device raises
 one alarm, not one per interface. Unreadable values (`null` or garbage)
 freeze an alarm rather than clearing it; a value that disappears from the
 feed entirely auto-clears after a configurable number of scans.
+
+## Exporting is what arms alerting
+
+AlertCanvas only ever sees `snmp-status.json`. That one fact explains every
+"why didn't it alert?" you will ever have, so its consequences are worth
+spelling out once:
+
+- **Only exported values can alarm.** In SNMPCanvas, *tracking* a value
+  polls and graphs it; the separate *export* checkbox is what puts it in
+  the feed. No export, no rule, no alarm - high CPU included. Same for the
+  UPS on-battery status: the `Power` state value has to be exported like
+  anything else before its default crit rule can fire. The Watching page
+  is the audit - if a value is not listed there, AlertCanvas cannot see it.
+- **Device up/down needs at least one exported interface.** The
+  device-down rule keys off the feed's interface entries specifically. A
+  device that exports only sensor values (a UPS exporting battery and
+  temperature, say) freezes its metrics when it goes unreachable - honest,
+  but silent. Export one interface from every device you want up/down
+  alarms for, even if no board will ever display it; the management port
+  is fine.
+- **Reboot detection needs the device's uptime export** toggled in
+  SNMPCanvas, for the same reason.
+- **PingCanvas up/down is display, not alerting.** Both apps read the same
+  file and neither knows the other exists: a red line on the wall and a
+  device-down email are independent consumers with independent rules. The
+  board going red does not imply a notification, and muting an alarm here
+  changes nothing on the board. The apps are modular on purpose - each one
+  can be run, replaced, or ignored without the others noticing.
+
+### Scan rate vs. poll rate
+
+The feed only changes when SNMPCanvas polls (default every 30 s,
+per-device overridable). AlertCanvas re-reads the file on its own scan
+interval (also 30 s by default) - and scanning faster than the feed
+updates does nothing useful. Worse than nothing, in fact: "N consecutive
+breaching scans" counts *scans*, not fresh samples, so a 5 s scan against
+a 30 s feed can satisfy `raise scans: 2` by reading the same SNMP sample
+twice - the anti-flap confirmation confirms nothing. Keep the scan
+interval at or above the fastest SNMPCanvas poll interval; matching them
+1:1 is the sweet spot.
+
+With everything at defaults the arithmetic is: a condition appears in the
+feed within 30 s, two confirming scans take 30-60 s more, so a
+notification lands roughly 60-90 s after the condition starts. Sub-scan
+blips (a 10 s power transfer between polls) are invisible by design - this
+is a polling pipeline, not a trap receiver. The stale-feed watchdog
+tolerates 3x the feed's own poll interval (minimum 120 s) before declaring
+the feed itself dead, so slowing SNMPCanvas down automatically loosens the
+watchdog too.
 
 ## Notifications
 
