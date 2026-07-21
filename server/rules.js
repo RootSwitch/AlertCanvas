@@ -15,7 +15,7 @@
 const LOWER_IS_BAD = new Set(['battery', 'runtime', 'uptime']);
 
 const METRIC_KINDS = ['cpu', 'mem', 'disk', 'temp', 'fan', 'power', 'util',
-    'battery', 'runtime', 'outlet', 'uptime'];
+    'battery', 'runtime', 'outlet', 'uptime', 'meter'];
 
 // config = {
 //   thresholds:  { cpu: {warn,crit}|null, ... }          per-kind defaults

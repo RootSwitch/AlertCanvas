@@ -159,7 +159,8 @@ const DEFAULT_THRESHOLDS = {
     fan: null,
     power: null,
     outlet: null,
-    uptime: null
+    uptime: null,
+    meter: null        // amps/volts/etc - no universal number; alert via override
 };
 
 const DEFAULT_IF_RULES = {

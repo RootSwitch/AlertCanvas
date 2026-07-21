@@ -146,6 +146,14 @@ test('override with only crit set still works', () => {
     assert.strictEqual(byKey(evalOne({ metrics: [metric({ value: 60 })] }, cfg), 'metric:M1').severity, 'crit');
     assert.strictEqual(byKey(evalOne({ metrics: [metric({ value: 40 })] }, cfg), 'metric:M1').severity, null);
 });
+test('meter kind (amps/volts) has no default threshold but honors an override', () => {
+    const m = { code: 'A1', kind: 'meter', host: 'pdu1', display: 'Phase L1 15 A', value: 15, unit: 'A' };
+    // No universal number for a raw reading - a meter never alarms by default.
+    assert.strictEqual(evalOne({ metrics: [m] }).find((c) => c.key === 'metric:A1'), undefined);
+    // Until the user sets one (e.g. warn near a branch-circuit limit).
+    const cfg = config({ overrides: [{ scope: 'code', code: 'A1', host: null, kind: 'meter', warn: 12, crit: 16, severity: null, enabled: 1 }] });
+    assert.strictEqual(byKey(evalOne({ metrics: [m] }, cfg), 'metric:A1').severity, 'warn');
+});
 
 // --- interface rules ---
 test('oper down while admin up alarms at configured severity', () => {
