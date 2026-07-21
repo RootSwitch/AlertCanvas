@@ -316,16 +316,19 @@ table.thresholds .dir {
 }
 .section-note { color: var(--se-txt-dim); font-size: 12px; margin: 4px 0 10px; }
 
-.tmpl-vars {
+/* Alert formatting: the template-variable reference table */
+.tmpl-table { max-width: 720px; margin-bottom: 14px; }
+.tmpl-table td:last-child { color: var(--se-txt-dim); font-variant-numeric: tabular-nums; }
+.tmpl-var {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 11px;
-    color: var(--se-txt-dim);
+    color: var(--se-txt);
     background: var(--se-input);
     border: 1px solid var(--se-border);
     border-radius: 4px;
-    padding: 6px 8px;
-    margin-bottom: 10px;
-    line-height: 1.8;
+    padding: 0 5px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
 }
 
 /* ===== Login ===== */

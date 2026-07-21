@@ -1,5 +1,5 @@
 'use strict';
-// The "verbiage" engine: {{variable}} substitution into user-editable subject,
+// The alert-formatting engine: {{variable}} substitution into user-editable subject,
 // body, and syslog message templates. Unknown variables render as-is so a typo
 // is visible in the mail rather than silently blank.
 

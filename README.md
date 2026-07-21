@@ -123,7 +123,7 @@ clears.
 
 ## Notifications
 
-Email is plain text with editable **verbiage templates**
+Email is plain text with editable **alert formatting templates**
 (`{{host}} {{metric}} {{value}} {{threshold}} {{severity}} {{duration}} ...`).
 Syslog messages are RFC 5424 with a structured-data block:
 

@@ -208,7 +208,7 @@ const DEFAULTS = {
     syslog_sev_crit: '2',
     syslog_sev_warn: '4',
     syslog_sev_clear: '5',
-    // verbiage - templates.js substitutes {{...}} variables
+    // alert formatting - templates.js substitutes {{...}} variables
     tmpl_subject_raise: '[AlertCanvas] {{severity}}: {{label}}',
     tmpl_body_raise: '{{time}}\n{{label}} is {{severity}}: value {{value}}{{unit}} (threshold {{threshold}}{{unit}}).\n\n-- AlertCanvas',
     tmpl_subject_clear: '[AlertCanvas] cleared: {{label}}',

@@ -690,9 +690,25 @@
         </div>
 
         <div class="panel">
-            <h2>Verbiage</h2>
-            <div class="section-note">Templates for notifications. Variables:</div>
-            <div class="tmpl-vars">{{label}} {{host}} {{metric}} {{kind}} {{code}} {{value}} {{unit}} {{threshold}} {{severity}} {{event}} {{time}} {{duration}}</div>
+            <h2>Alert formatting</h2>
+            <div class="section-note">Templates for notification subjects and bodies. Any <span class="tmpl-var">{{variable}}</span> below is replaced when the message is built; unknown variables are left visible so typos show up in the mail instead of vanishing.</div>
+            <table class="list tmpl-table">
+                <thead><tr><th>Variable</th><th>Description</th><th>Example</th></tr></thead>
+                <tbody>
+                <tr><td><span class="tmpl-var">{{label}}</span></td><td>Full alarm name: host + metric, with the rule kind when the name doesn't say it</td><td>GPU-1 GPU (util)</td></tr>
+                <tr><td><span class="tmpl-var">{{host}}</span></td><td>Host the value belongs to</td><td>GPU-1</td></tr>
+                <tr><td><span class="tmpl-var">{{metric}}</span></td><td>Metric part of the label, without the host</td><td>GPU (util)</td></tr>
+                <tr><td><span class="tmpl-var">{{kind}}</span></td><td>Rule kind - which threshold bucket fired</td><td>util</td></tr>
+                <tr><td><span class="tmpl-var">{{code}}</span></td><td>Stable snmp-status.json code for the value</td><td>FCK4</td></tr>
+                <tr><td><span class="tmpl-var">{{value}}</span></td><td>Reading at the time of the notification</td><td>92</td></tr>
+                <tr><td><span class="tmpl-var">{{unit}}</span></td><td>Unit of the value and threshold</td><td>%</td></tr>
+                <tr><td><span class="tmpl-var">{{threshold}}</span></td><td>The limit that was crossed</td><td>90</td></tr>
+                <tr><td><span class="tmpl-var">{{severity}}</span></td><td>warn or crit (the incident's worst)</td><td>crit</td></tr>
+                <tr><td><span class="tmpl-var">{{event}}</span></td><td>raise, escalate, renotify, clear, or test</td><td>raise</td></tr>
+                <tr><td><span class="tmpl-var">{{time}}</span></td><td>UTC timestamp of the notification</td><td>2026-07-21 01:38:59Z</td></tr>
+                <tr><td><span class="tmpl-var">{{duration}}</span></td><td>How long the alarm has been raised (on clears: the whole incident)</td><td>5m 30s</td></tr>
+                </tbody>
+            </table>
             <div class="form-grid" style="max-width:none">
                 <label>Raise subject</label><input type="text" id="set-tmplSubjectRaise" value="${esc(s.tmplSubjectRaise)}">
                 <label class="full">Raise body</label>
@@ -912,7 +928,7 @@
             } catch (e) { flash('ntfy-msg', false, e.message); }
         });
 
-        // --- verbiage ---
+        // --- alert formatting ---
         $('save-tmpl').addEventListener('click', () => save('tmpl-msg', {
             tmplSubjectRaise: $('set-tmplSubjectRaise').value,
             tmplBodyRaise: $('set-tmplBodyRaise').value,
