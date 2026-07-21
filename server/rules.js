@@ -91,8 +91,8 @@ function metricName(m) {
 }
 
 // Full label: "<host> <name>", plus the rule kind when the name doesn't
-// already say it - "GPU-1 GPU (util)" tells you WHICH threshold bucket
-// fired, where a bare "GPU-1 GPU" reads as noise. Skipped when redundant
+// already say it - "compute-01 GPU (util)" tells you WHICH threshold bucket
+// fired, where a bare "compute-01 GPU" reads as noise. Skipped when redundant
 // ("CPU"/cpu, "Batt"/battery, "Temp"/temp).
 function metricLabel(m) {
     const name = metricName(m);

@@ -201,14 +201,14 @@ test('device-down rule can be muted per host', () => {
 
 // --- labels ---
 test('metric label keeps the multi-word display name and appends the kind', () => {
-    const c = byKey(evalOne({ metrics: [metric({ kind: 'util', display: 'UPS1-Load 85%', value: 85, host: 'MPC1',
+    const c = byKey(evalOne({ metrics: [metric({ kind: 'util', display: 'UPS1-Load 85%', value: 85, host: 'ups-host',
         code: 'M1' })] }, config({ thresholds: { util: { warn: 70, crit: 90 } } })), 'metric:M1');
-    assert.strictEqual(c.label, 'MPC1 UPS1-Load (util)');
+    assert.strictEqual(c.label, 'ups-host UPS1-Load (util)');
 });
-test('label appends the kind when the name does not say it (GPU-1 GPU)', () => {
-    const c = byKey(evalOne({ metrics: [metric({ kind: 'util', display: 'GPU 90%', value: 91, host: 'GPU-1',
+test('label appends the kind when the name does not say it (compute-01 GPU)', () => {
+    const c = byKey(evalOne({ metrics: [metric({ kind: 'util', display: 'GPU 90%', value: 91, host: 'compute-01',
         code: 'M1' })] }, config({ thresholds: { util: { warn: 70, crit: 90 } } })), 'metric:M1');
-    assert.strictEqual(c.label, 'GPU-1 GPU (util)');
+    assert.strictEqual(c.label, 'compute-01 GPU (util)');
 });
 test('label skips the kind when redundant (CPU/cpu, Batt/battery, Temp/temp)', () => {
     const cases = [

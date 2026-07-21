@@ -19,7 +19,7 @@
   the crossed threshold sticks with it, so a crit incident always shows
   the crit limit rather than whatever level the value last sat above
 - Metric labels append the rule kind when the name doesn't say it
-  ("GPU-1 GPU (util)"), in the UI, emails, and syslog alike
+  ("compute-01 GPU (util)"), in the UI, emails, and syslog alike
 - History shows the crossed limit next to the peak value
 - Compose sets a stable container hostname so syslog's HOSTNAME field reads
   "alertcanvas" instead of a container id

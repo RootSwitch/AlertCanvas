@@ -780,8 +780,8 @@
             <table class="list tmpl-table">
                 <thead><tr><th>Variable</th><th>Description</th><th>Example</th></tr></thead>
                 <tbody>
-                <tr><td><span class="tmpl-var">{{label}}</span></td><td>Full alarm name: host + metric, with the rule kind when the name doesn't say it</td><td>GPU-1 GPU (util)</td></tr>
-                <tr><td><span class="tmpl-var">{{host}}</span></td><td>Host the value belongs to</td><td>GPU-1</td></tr>
+                <tr><td><span class="tmpl-var">{{label}}</span></td><td>Full alarm name: host + metric, with the rule kind when the name doesn't say it</td><td>compute-01 GPU (util)</td></tr>
+                <tr><td><span class="tmpl-var">{{host}}</span></td><td>Host the value belongs to</td><td>compute-01</td></tr>
                 <tr><td><span class="tmpl-var">{{metric}}</span></td><td>Metric part of the label, without the host</td><td>GPU (util)</td></tr>
                 <tr><td><span class="tmpl-var">{{kind}}</span></td><td>Rule kind - which threshold bucket fired</td><td>util</td></tr>
                 <tr><td><span class="tmpl-var">{{code}}</span></td><td>Stable snmp-status.json code for the value</td><td>FCK4</td></tr>
