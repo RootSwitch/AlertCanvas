@@ -784,7 +784,7 @@
                 <tr><td><span class="tmpl-var">{{host}}</span></td><td>Host the value belongs to</td><td>compute-01</td></tr>
                 <tr><td><span class="tmpl-var">{{metric}}</span></td><td>Metric part of the label, without the host</td><td>GPU (util)</td></tr>
                 <tr><td><span class="tmpl-var">{{kind}}</span></td><td>Rule kind - which threshold bucket fired</td><td>util</td></tr>
-                <tr><td><span class="tmpl-var">{{code}}</span></td><td>Stable snmp-status.json code for the value</td><td>FCK4</td></tr>
+                <tr><td><span class="tmpl-var">{{code}}</span></td><td>Stable snmp-status.json code for the value</td><td>M3XR</td></tr>
                 <tr><td><span class="tmpl-var">{{value}}</span></td><td>Reading at the time of the notification</td><td>92</td></tr>
                 <tr><td><span class="tmpl-var">{{unit}}</span></td><td>Unit of the value and threshold</td><td>%</td></tr>
                 <tr><td><span class="tmpl-var">{{threshold}}</span></td><td>The limit that was crossed</td><td>90</td></tr>

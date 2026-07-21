@@ -218,7 +218,7 @@ messages are RFC 5424 with a structured-data block:
 
 ```
 <130>1 2026-07-20T23:09:29Z alertcanvas alertcanvas 1 ESCALATE
-  [alertc@0 event="escalate" severity="crit" kind="temp" host="nas-01" code="8PTS"]
+  [alertc@0 event="escalate" severity="crit" kind="temp" host="nas-01" code="K7Q2"]
   crit nas-01 Temp value 60C threshold 55C
 ```
 
@@ -310,7 +310,7 @@ values, drop links, take devices down - so you can watch alarms raise and
 clear without owning a misbehaving UPS:
 
 ```
-node tools/refresh-status.js --set 8PTS=60 --ifdown XA3F --devdown fw-1
+node tools/refresh-status.js --set K7Q2=60 --ifdown P9WT --devdown fw-1
 node tools/refresh-status.js --stale      # let the watchdog catch it
 ```
 

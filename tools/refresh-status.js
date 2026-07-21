@@ -5,11 +5,11 @@
 //
 //   node tools/refresh-status.js                                # ./snmp-status.json -> ./data/live.json
 //   node tools/refresh-status.js --in feed.json --out data/live.json
-//   node tools/refresh-status.js --set 8PTS=60                  # metric code 8PTS reads 60
-//   node tools/refresh-status.js --set 8PTS=null                # metric goes unreadable
-//   node tools/refresh-status.js --ifdown V5BV                  # interface code V5BV oper down
-//   node tools/refresh-status.js --devdown FW-1                 # every entry for device FW-1 down
-//   node tools/refresh-status.js --drop 8PTS                    # remove that code from the feed
+//   node tools/refresh-status.js --set K7Q2=60                  # metric code K7Q2 reads 60
+//   node tools/refresh-status.js --set K7Q2=null                # metric goes unreadable
+//   node tools/refresh-status.js --ifdown P9WT                  # interface code P9WT oper down
+//   node tools/refresh-status.js --devdown fw-1                 # every entry for device fw-1 down
+//   node tools/refresh-status.js --drop K7Q2                    # remove that code from the feed
 //   node tools/refresh-status.js --stale                        # keep the old generatedAt
 //
 // Flags combine; --set/--ifdown/--devdown/--drop repeat.
