@@ -141,9 +141,52 @@ function recordLoginFailure(ip) {
 }
 function recordLoginSuccess(ip) { failures.delete(ip); }
 
+
+// --- suite single sign-on (LaunchCanvas) ---
+// Opt-in via SUITE_SECRET (the same value set on the LaunchCanvas portal):
+// a valid portal token arriving on any request upgrades to a normal local
+// session transparently. No secret configured = this path is inert.
+// Token: base64url(JSON {u,iat,exp}) "." base64url(hmac_sha256(payload)).
+// Logout here stays local on purpose: with a live portal token the next
+// request signs back in - that is the SSO contract; suite-wide logout (and
+// revocation, by rotating SUITE_SECRET) lives at the portal.
+const SUITE_COOKIE = 'canvas_suite';
+
+function verifySuiteToken(req) {
+    const secret = process.env.SUITE_SECRET;
+    if (!secret) return null;
+    const token = parseCookies(req)[SUITE_COOKIE];
+    if (!token) return null;
+    const dot = token.indexOf('.');
+    if (dot <= 0) return null;
+    try {
+        const payload = Buffer.from(token.slice(0, dot), 'base64url');
+        const sig = Buffer.from(token.slice(dot + 1), 'base64url');
+        const expect = crypto.createHmac('sha256', secret).update(payload).digest();
+        if (sig.length !== expect.length || !crypto.timingSafeEqual(sig, expect)) return null;
+        const claims = JSON.parse(payload.toString('utf8'));
+        const now = Math.floor(Date.now() / 1000);
+        if (!claims || typeof claims.u !== 'string' || !(Number(claims.exp) > now)) return null;
+        return claims;
+    } catch (_) {
+        return null;
+    }
+}
+
+// Session check with the transparent SSO upgrade, for any request path that
+// can still set a cookie on the response.
+function authenticate(req, res) {
+    if (validateSession(tokenFromRequest(req))) return true;
+    if (!verifySuiteToken(req)) return false;
+    const token = createSession();
+    res.setHeader('Set-Cookie', sessionCookie(token));
+    return true;
+}
+
 module.exports = {
     passwordIsSet, setPassword, checkPassword, seedFromEnv,
     createSession, validateSession, destroySession, destroyOtherSessions, pruneSessions,
     sessionCookie, clearCookie, tokenFromRequest,
-    loginAllowed, recordLoginFailure, recordLoginSuccess
+    loginAllowed, recordLoginFailure, recordLoginSuccess,
+    authenticate
 };

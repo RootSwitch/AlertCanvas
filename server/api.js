@@ -155,7 +155,7 @@ const routes = [
     } },
 
     { method: 'GET', path: /^\/api\/session$/, authRequired: false, handler: (req, res) => {
-        const authed = auth.validateSession(auth.tokenFromRequest(req));
+        const authed = auth.authenticate(req, res);
         ok(res, { authenticated: authed, needsSetup: !auth.passwordIsSet() });
     } },
 
@@ -509,7 +509,7 @@ async function handle(req, res, pathname, query) {
         const m = route.path.exec(pathname);
         if (!m) continue;
 
-        if (route.authRequired !== false && !auth.validateSession(auth.tokenFromRequest(req))) {
+        if (route.authRequired !== false && !auth.authenticate(req, res)) {
             return json(res, 401, { error: 'authentication required' });
         }
 
