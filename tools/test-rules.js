@@ -175,6 +175,11 @@ test('roster and interface device entries dedupe to one condition', () => {
     assert.strictEqual(conds.length, 1);
     assert.strictEqual(conds[0].severity, 'crit');
 });
+test('LOWER_IS_BAD is exported and covers battery/runtime/uptime', () => {
+    // The override validation and the settings order-check both key off this.
+    for (const k of ['battery', 'runtime', 'uptime']) assert.ok(rules.LOWER_IS_BAD.has(k), k);
+    for (const k of ['cpu', 'temp', 'state']) assert.ok(!rules.LOWER_IS_BAD.has(k), k);
+});
 test('state kind alarms at crit by default when value is 1, quiet at 0', () => {
     const m = (v) => ({ code: 'S1', kind: 'state', host: 'ups1', display: v ? 'Power On battery' : 'Power Online', value: v, unit: '' });
     const cfg = config({ thresholds: { state: { warn: null, crit: 1 } } });

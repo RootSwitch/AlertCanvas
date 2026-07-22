@@ -1,0 +1,218 @@
+{
+ "schemaVersion": 2,
+ "generator": "snmpcanvas/1.0.0",
+ "generatedAt": "2026-07-21T00:00:00.000Z",
+ "pollIntervalSec": 3600,
+ "interfaces": [
+  {
+   "id": "core-sw1:eth0",
+   "code": "K7Q2",
+   "device": {
+    "name": "core-sw1",
+    "host": "10.0.0.2",
+    "status": "up"
+   },
+   "ifIndex": 1,
+   "name": "eth0",
+   "alias": "uplink to fw",
+   "speedBps": 1000000000,
+   "adminStatus": "up",
+   "operStatus": "up",
+   "sampledAt": "2026-07-21T00:00:00.000Z",
+   "inBps": 612345678,
+   "outBps": 93456712,
+   "inErrorsPerSec": 0,
+   "outErrorsPerSec": 0,
+   "inDiscardsPerSec": 0,
+   "outDiscardsPerSec": 0
+  },
+  {
+   "id": "fw-1:wan0",
+   "code": "P9WT",
+   "device": {
+    "name": "fw-1",
+    "host": "10.0.0.1",
+    "status": "up"
+   },
+   "ifIndex": 2,
+   "name": "wan0",
+   "alias": "ISP handoff",
+   "speedBps": 1000000000,
+   "adminStatus": "up",
+   "operStatus": "up",
+   "sampledAt": "2026-07-21T00:00:00.000Z",
+   "inBps": 88123456,
+   "outBps": 41234567,
+   "inErrorsPerSec": 0,
+   "outErrorsPerSec": 0,
+   "inDiscardsPerSec": 0,
+   "outDiscardsPerSec": 0
+  },
+  {
+   "id": "core-sw1:Gi0/24",
+   "code": "M3XR",
+   "device": {
+    "name": "core-sw1",
+    "host": "10.0.0.2",
+    "status": "up"
+   },
+   "ifIndex": 24,
+   "name": "Gi0/24",
+   "alias": "AP-3 PoE",
+   "speedBps": 1000000000,
+   "adminStatus": "up",
+   "operStatus": "down",
+   "sampledAt": "2026-07-21T00:00:00.000Z",
+   "inBps": 0,
+   "outBps": 0,
+   "inErrorsPerSec": 0,
+   "outErrorsPerSec": 0,
+   "inDiscardsPerSec": 0,
+   "outDiscardsPerSec": 0
+  },
+  {
+   "id": "esxi-01:vmnic0",
+   "code": "D8YK",
+   "device": {
+    "name": "esxi-01",
+    "host": "10.0.0.5",
+    "status": "up"
+   },
+   "ifIndex": 3,
+   "name": "vmnic0",
+   "alias": "vSwitch0",
+   "speedBps": 1000000000,
+   "adminStatus": "up",
+   "operStatus": "up",
+   "sampledAt": "2026-07-21T00:00:00.000Z",
+   "inBps": 210345678,
+   "outBps": 180234567,
+   "inErrorsPerSec": 0,
+   "outErrorsPerSec": 0,
+   "inDiscardsPerSec": 0,
+   "outDiscardsPerSec": 0
+  }
+ ],
+ "metrics": [
+  {
+   "code": "H4TN",
+   "kind": "cpu",
+   "host": "compute-01",
+   "display": "CPU 91%",
+   "value": 91,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "R3JD",
+   "kind": "cpu",
+   "host": "esxi-01",
+   "display": "CPU 97%",
+   "value": 97,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "N6VC",
+   "kind": "cpu",
+   "host": "nas-01",
+   "display": "CPU 22%",
+   "value": 22,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "W2GP",
+   "kind": "mem",
+   "host": "compute-01",
+   "display": "Mem 88%",
+   "value": 88,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "Q8LM",
+   "kind": "mem",
+   "host": "esxi-01",
+   "display": "Mem 71%",
+   "value": 71,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "T5FN",
+   "kind": "temp",
+   "host": "nas-01",
+   "display": "Temp 58C",
+   "value": 58,
+   "unit": "C",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "B5HZ",
+   "kind": "temp",
+   "host": "core-sw1",
+   "display": "Temp 47C",
+   "value": 47,
+   "unit": "C",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "X4RT",
+   "kind": "util",
+   "host": "ups-host",
+   "display": "Load 72%",
+   "value": 72,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "J7KP",
+   "kind": "battery",
+   "host": "ups-host",
+   "display": "Batt 100%",
+   "value": 100,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "G9SB",
+   "kind": "runtime",
+   "host": "ups-host",
+   "display": "Runtime 1h 31m",
+   "value": 5460,
+   "unit": "s",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "K3MW",
+   "kind": "power",
+   "host": "gpu-node",
+   "display": "Power 240W",
+   "value": 240,
+   "unit": "W",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  },
+  {
+   "code": "D2PY",
+   "kind": "disk",
+   "host": "nas-01",
+   "display": "Disk 79%",
+   "value": 79,
+   "unit": "%",
+   "status": "ok",
+   "sampledAt": "2026-07-21T00:00:00.000Z"
+  }
+ ]
+}

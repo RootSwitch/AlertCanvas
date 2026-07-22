@@ -204,6 +204,21 @@ async function tick() {
             })();
         }
 
+        // Collapse conditions to one per alert_key BEFORE the write loop. Two
+        // feed entries sharing a code (SNMPCanvas does not guarantee code
+        // uniqueness when device names collide) would otherwise both try to
+        // INSERT the same alert_key, hit the partial-unique index, and roll the
+        // WHOLE transaction back - halting every raise/clear/watchdog silently
+        // until the duplicate leaves the feed. Keep the most severe (crit >
+        // warn > none), so a real alarm always wins over a quiet/frozen twin.
+        const sevRank = (c) => (c.severity === 'crit' ? 3 : c.severity === 'warn' ? 2 : c.frozen ? 0 : 1);
+        const byKey = new Map();
+        for (const c of conditions) {
+            const prev = byKey.get(c.key);
+            if (!prev || sevRank(c) > sevRank(prev)) byKey.set(c.key, c);
+        }
+        conditions = [...byKey.values()];
+
         db.transaction(() => {
             const open = new Map();
             for (const row of stmts.open.all()) open.set(row.alert_key, row);

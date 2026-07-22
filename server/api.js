@@ -67,6 +67,18 @@ function cleanBoolRule(v, name) {
     return { enabled: !!v.enabled, severity };
 }
 
+// Both levels set must be ordered sensibly for the kind's direction, or a
+// habits-of-the-other-direction entry (battery warn 20 / crit 50) alerts crit
+// far too early with no hint. Enforced on the global thresholds AND per-target
+// overrides.
+function checkOrder(name, kind, levels) {
+    if (!levels || levels.warn == null || levels.crit == null) return;
+    const lowerIsBad = rules.LOWER_IS_BAD.has(kind);
+    if (lowerIsBad ? levels.warn < levels.crit : levels.warn > levels.crit) {
+        throw new Error(`${name}: warn must be ${lowerIsBad ? 'above' : 'below'} crit for this kind (it alerts ${lowerIsBad ? 'low' : 'high'}).`);
+    }
+}
+
 const OVERRIDE_KINDS = [...rules.METRIC_KINDS, 'if-down', 'if-errors', 'if-discards', 'if-util', 'device-down'];
 const BOOL_KINDS = ['if-down', 'device-down'];
 
@@ -81,6 +93,7 @@ function overrideFromBody(body) {
     if (kind === 'device-down' && scope !== 'host-kind') throw new Error('device-down overrides are per host');
     const levels = BOOL_KINDS.includes(kind) ? null : cleanLevels(
         { warn: body.warn, crit: body.crit }, 'levels');
+    checkOrder('override', kind, levels);
     return {
         scope, code, host, kind,
         warn: levels ? levels.warn : null,
@@ -343,16 +356,6 @@ const routes = [
         // payload silently disables alerting rules with a 200 - the worst
         // possible failure mode for an alerter.
         const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-        // Both levels set must be ordered sensibly for the kind's direction,
-        // or a habits-of-the-other-direction entry (battery warn 20 / crit
-        // 50) alerts crit far too early with no hint.
-        const checkOrder = (name, kind, levels) => {
-            if (!levels || levels.warn == null || levels.crit == null) return;
-            const lowerIsBad = rules.LOWER_IS_BAD.has(kind);
-            if (lowerIsBad ? levels.warn < levels.crit : levels.warn > levels.crit) {
-                throw new Error(`${name}: warn must be ${lowerIsBad ? 'above' : 'below'} crit for this kind (it alerts ${lowerIsBad ? 'low' : 'high'}).`);
-            }
-        };
         try {
             if (body.thresholds !== undefined) {
                 if (!isPlainObject(body.thresholds)) throw new Error('thresholds must be an object');
