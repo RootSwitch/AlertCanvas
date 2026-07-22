@@ -173,14 +173,14 @@ function verifySuiteToken(req) {
     }
 }
 
-// Session check with the transparent SSO upgrade, for any request path that
-// can still set a cookie on the response.
-function authenticate(req, res) {
-    if (validateSession(tokenFromRequest(req))) return true;
-    if (!verifySuiteToken(req)) return false;
-    const token = createSession();
-    res.setHeader('Set-Cookie', sessionCookie(token));
-    return true;
+// A request is authenticated by EITHER a local password session OR - when
+// SUITE_SECRET is set - a valid LaunchCanvas suite token. The token is
+// re-verified every request rather than converted into a persistent local
+// session, so rotating SUITE_SECRET, the token's own expiry, and portal logout
+// (which clears the shared cookie) all cut access at once, and token-only
+// clients never accumulate session rows.
+function authenticate(req) {
+    return validateSession(tokenFromRequest(req)) || !!verifySuiteToken(req);
 }
 
 module.exports = {

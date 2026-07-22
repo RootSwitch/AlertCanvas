@@ -6,7 +6,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { db, DATA_DIR, getSetting, setSetting, setSmtpPassword, setSecretSetting } = require('./db');
+const { db, DATA_DIR, getSetting, setSetting, setSmtpPassword, setSecretSetting, DEFAULT_THRESHOLDS, DEFAULT_IF_RULES } = require('./db');
 const auth = require('./auth');
 const scanner = require('./scanner');
 const notify = require('./notify');
@@ -155,7 +155,7 @@ const routes = [
     } },
 
     { method: 'GET', path: /^\/api\/session$/, authRequired: false, handler: (req, res) => {
-        const authed = auth.authenticate(req, res);
+        const authed = auth.authenticate(req);
         ok(res, { authenticated: authed, needsSetup: !auth.passwordIsSet() });
     } },
 
@@ -300,9 +300,13 @@ const routes = [
             const v = getSetting(key);
             out[name] = INT_RANGE[key] ? parseInt(v, 10) : BOOL_KEYS.has(key) ? v === '1' : v;
         }
+        // Merge stored over defaults exactly like the scanner's readConfig, so
+        // a kind added in a later release (e.g. state's crit default) always
+        // reaches the UI even on installs whose thresholds row predates it -
+        // otherwise it shows blank and the next Settings save nulls it out.
         let thresholds, ifRules, deviceDown;
-        try { thresholds = JSON.parse(getSetting('thresholds')); } catch (_) { thresholds = {}; }
-        try { ifRules = JSON.parse(getSetting('if_rules')); } catch (_) { ifRules = {}; }
+        try { thresholds = { ...DEFAULT_THRESHOLDS, ...JSON.parse(getSetting('thresholds')) }; } catch (_) { thresholds = { ...DEFAULT_THRESHOLDS }; }
+        try { ifRules = { ...DEFAULT_IF_RULES, ...JSON.parse(getSetting('if_rules')) }; } catch (_) { ifRules = { ...DEFAULT_IF_RULES }; }
         try { deviceDown = JSON.parse(getSetting('device_down')); } catch (_) { deviceDown = {}; }
         ok(res, {
             ...out, thresholds, ifRules, deviceDown,
@@ -509,7 +513,7 @@ async function handle(req, res, pathname, query) {
         const m = route.path.exec(pathname);
         if (!m) continue;
 
-        if (route.authRequired !== false && !auth.authenticate(req, res)) {
+        if (route.authRequired !== false && !auth.authenticate(req)) {
             return json(res, 401, { error: 'authentication required' });
         }
 
