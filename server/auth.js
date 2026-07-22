@@ -47,7 +47,15 @@ function checkPassword(password) {
 
 // Seed from env on first boot so a compose file can pre-set the password.
 function seedFromEnv() {
-    if (!passwordIsSet() && process.env.ADMIN_PASSWORD) setPassword(process.env.ADMIN_PASSWORD);
+    if (!passwordIsSet() && process.env.ADMIN_PASSWORD) {
+        // Seed even a short one (an unclaimed setup page is worse), but say so:
+        // the web UI enforces 8+ chars and would reject this same password.
+        if (process.env.ADMIN_PASSWORD.length < 8) {
+            console.warn(new Date().toISOString(),
+                '[auth] ADMIN_PASSWORD is shorter than the 8-character minimum the UI enforces - consider a longer one');
+        }
+        setPassword(process.env.ADMIN_PASSWORD);
+    }
 }
 
 // --- sessions ---
