@@ -20,6 +20,9 @@ function json(res, status, body) {
     const buf = JSON.stringify(body);
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(buf);
+    // Truthy so handle()'s early exits (auth 401, 415, body errors) read as
+    // "handled" - the server's 404 fallback must never double-write a reply.
+    return true;
 }
 const ok = (res, body = { ok: true }) => json(res, 200, body);
 const bad = (res, msg) => json(res, 400, { error: msg });
