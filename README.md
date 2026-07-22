@@ -230,6 +230,12 @@ device takes an optional notification label, so the 2 AM email says
 its own stale-feed watchdog - but only once at least one device is watched,
 so an SNMP-only install never hears about a feed it doesn't use.
 
+The rule is symmetric: set the status file path to `off` (or
+`STATUS_FILE=off` in the compose file) and the SNMP feed is disabled
+entirely, watchdog included. That makes a **PingCanvas + AlertCanvas pair**
+a first-class lightweight deployment - a ping wall that pages you, light
+enough for a Pi, with a plain JSON file as the only interconnect.
+
 ## Exporting is what arms alerting
 
 For everything else, AlertCanvas only ever sees `snmp-status.json`. That

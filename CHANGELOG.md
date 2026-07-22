@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 - 2026-07-22
+
+- Ping-only deployments are first-class: set the status file path to
+  `off` (or blank, e.g. `STATUS_FILE=off` in the compose file) and the
+  SNMP feed is disabled entirely - no permanent watchdog alarm about a
+  feed the deployment never runs. This is the symmetric rule to ping
+  alerting's own arming: each feed is inert until asked for. Enables the
+  lightweight PingCanvas + AlertCanvas pair (a ping wall that pages you -
+  no databases beyond AlertCanvas's own, Pi-friendly). The heartbeat and
+  "all quiet" lines count watched ping devices so a ping-only install
+  reads honestly.
+
 ## 0.4.0 - 2026-07-22
 
 - Ping alerting: alarm on the devices PingCanvas pings but SNMPCanvas

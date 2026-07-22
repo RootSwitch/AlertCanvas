@@ -128,7 +128,16 @@ async function tick() {
     try {
         const now = nowS();
         const cfg = readConfig();
-        const feed = readFeed(getSetting('status_file'));
+        // Blank or 'off' disables the SNMP feed entirely - the symmetric rule
+        // to the ping feed's arming below. This is what makes a lightweight
+        // PingCanvas+AlertCanvas pair (ping alerting only, no SNMPCanvas) a
+        // first-class deployment instead of one with a permanent watchdog
+        // alarm about a feed it never asked for.
+        const snmpFile = String(getSetting('status_file') || '').trim();
+        const snmpOff = !snmpFile || snmpFile.toLowerCase() === 'off';
+        const feed = snmpOff
+            ? { ok: false, off: true, error: 'SNMP feed disabled (status file is off)', doc: null }
+            : readFeed(snmpFile);
 
         // Evaluation must never kill the scan loop: a feed entry with a shape
         // rules.js can't digest degrades to "feed bad" and rides the watchdog
@@ -145,9 +154,10 @@ async function tick() {
         }
 
         if (feed.doc) lastDoc = feed.doc;
+        if (feed.off) lastDoc = null;   // Watching must not show a stale roster for a feed turned off
         lastScan = {
-            ts: now, ok: feed.ok, error: feed.ok ? null : feed.error,
-            feed: { generatedAt: feed.generatedAt || null, ageSec: feed.ageSec ?? null, staleAfterS: feed.staleAfterS ?? null }
+            ts: now, ok: feed.ok || !!feed.off, error: feed.ok || feed.off ? null : feed.error,
+            feed: { off: !!feed.off, generatedAt: feed.generatedAt || null, ageSec: feed.ageSec ?? null, staleAfterS: feed.staleAfterS ?? null }
         };
 
         const raiseScans = Math.max(1, intSetting('raise_scans', 2));
@@ -168,10 +178,13 @@ async function tick() {
         } else {
             lastScan.watching = null;
         }
+        // An OFF feed pushes a normal (clearing) watchdog condition rather
+        // than none, so an alarm raised before the operator turned the feed
+        // off clears instead of aging out through the missing machinery.
         conditions.push({
-            key: 'watchdog:feed', severity: feed.ok ? null : 'crit', frozen: false,
+            key: 'watchdog:feed', severity: feed.ok || feed.off ? null : 'crit', frozen: false,
             kind: 'watchdog', host: null, code: null,
-            label: feed.ok ? 'status feed' : `status feed - ${feed.error}`,
+            label: feed.ok || feed.off ? 'status feed' : `status feed - ${feed.error}`,
             value: null, threshold: null, unit: ''
         });
 
@@ -206,7 +219,10 @@ async function tick() {
                 label: pingFeed.ok ? 'ping status feed' : `ping status feed - ${pingFeed.error}`,
                 value: null, threshold: null, unit: ''
             });
-            if (lastScan.watching) lastScan.watching.pingDevices = Object.keys(pingWatch).length;
+            // In a ping-only deployment (SNMP feed off) the heartbeat still
+            // has something real to report.
+            if (!lastScan.watching) lastScan.watching = { metrics: 0, interfaces: 0, devices: 0, rules: 0 };
+            lastScan.watching.pingDevices = Object.keys(pingWatch).length;
         }
 
         const events = []; // { type, id }

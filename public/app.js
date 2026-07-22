@@ -296,7 +296,7 @@
         // Heartbeat: proof the scanner is looking, not just quiet.
         const w = status.watching;
         const heartbeat = `<span class="dot ${status.lastScanOk ? 'ok' : 'bad'}" title="${status.lastScanOk ? 'last scan succeeded' : 'last scan failed'}"></span>` +
-            (w ? `watching ${w.metrics} metric${w.metrics === 1 ? '' : 's'} + ${w.interfaces} interface${w.interfaces === 1 ? '' : 's'} - ` : '') +
+            (w ? `watching ${w.metrics} metric${w.metrics === 1 ? '' : 's'} + ${w.interfaces} interface${w.interfaces === 1 ? '' : 's'}${w.pingDevices ? ` + ${w.pingDevices} ping device${w.pingDevices === 1 ? '' : 's'}` : ''} - ` : '') +
             `scan ${fmtAgo(status.lastScanTs)}${status.feed && status.feed.ageSec != null ? ` - feed ${status.feed.ageSec}s old` : ''}`;
 
         const rows = alerts.map((a) => `
@@ -330,7 +330,7 @@
         ${alerts.length === 0 ? `
             <div class="panel"><div class="all-quiet">
                 <div class="big">All quiet</div>
-                <div>${w ? `Watching ${w.metrics} metrics and ${w.interfaces} interfaces across ${w.devices} devices (${w.rules} rules evaluated).` : 'No successful scan yet.'}</div>
+                <div>${w ? `Watching ${w.metrics} metrics and ${w.interfaces} interfaces across ${w.devices} devices${w.pingDevices ? ` plus ${w.pingDevices} ping device${w.pingDevices === 1 ? '' : 's'}` : ''} (${w.rules} rules evaluated).` : 'No successful scan yet.'}</div>
                 <div class="muted small" style="margin-top:4px">Last scan ${fmtAgo(status.lastScanTs)}, every ${status.scanIntervalS}s${status.feed && status.feed.ageSec != null ? `; feed ${status.feed.ageSec}s old` : ''}.</div>
             </div></div>` : `
             <div class="panel"><table class="list">
@@ -705,7 +705,7 @@
         <div class="panel">
             <h2>Feed and scanning</h2>
             <div class="form-grid">
-                <label>Status file path</label><input type="text" id="set-statusFile" value="${esc(s.statusFile)}">
+                <label title="The SNMPCanvas export. Set to 'off' for a ping-only deployment (PingCanvas + AlertCanvas pair) - no watchdog alarm about a feed you don't run">Status file path</label><input type="text" id="set-statusFile" value="${esc(s.statusFile)}">
                 <label>Scan interval (s)</label><input type="number" id="set-scanIntervalS" value="${s.scanIntervalS}" min="30">
                 <label>Scans to raise</label><input type="number" id="set-raiseScans" value="${s.raiseScans}" min="1" max="50" title="Consecutive breaching scans before an alarm raises">
                 <label>Scans to clear</label><input type="number" id="set-clearScans" value="${s.clearScans}" min="1" max="50" title="Consecutive normal scans before an alarm clears">
