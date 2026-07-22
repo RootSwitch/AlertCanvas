@@ -312,4 +312,48 @@ test('non-uptime kinds never look like reboots', () => {
     assert.strictEqual(rules.detectReboots(prev, [metric({ value: 5 })]).length, 0);
 });
 
+// --- ping feed (evaluatePing) ---
+const pingDoc = (devices) => ({ generated: '2026-01-01T00:00:00Z', pollIntervalSec: 15, devices });
+
+test('ping: watched down device raises crit, label preference watch > name > key', () => {
+    const doc = pingDoc({
+        '203.0.113.1': { state: 'down', latencyMs: null, name: 'ISP A' },
+        '198.51.100.1': { state: 'down', latencyMs: null }
+    });
+    const out = rules.evaluatePing(doc, { '203.0.113.1': { label: 'Primary ISP' }, '198.51.100.1': {} }, {});
+    assert.strictEqual(out.length, 2);
+    const a = out.find((c) => c.key === 'ping:203.0.113.1');
+    assert.strictEqual(a.severity, 'crit');
+    assert.strictEqual(a.kind, 'ping-down');
+    assert.strictEqual(a.label, 'Primary ISP ping');
+    const b = out.find((c) => c.key === 'ping:198.51.100.1');
+    assert.strictEqual(b.label, '198.51.100.1 ping');
+});
+test('ping: unwatched devices are ignored entirely', () => {
+    const doc = pingDoc({ '10.0.0.1': { state: 'down' } });
+    assert.strictEqual(rules.evaluatePing(doc, {}, {}).length, 0);
+});
+test('ping: up device emits a normal (clearing) condition with latency', () => {
+    const doc = pingDoc({ '10.0.0.1': { state: 'up', latencyMs: 12, name: 'gw' } });
+    const [c] = rules.evaluatePing(doc, { '10.0.0.1': {} }, {});
+    assert.strictEqual(c.severity, null);
+    assert.strictEqual(c.value, 12);
+    assert.strictEqual(c.unit, 'ms');
+});
+test('ping: degraded is normal by default, warn when opted in', () => {
+    const doc = pingDoc({ '10.0.0.1': { state: 'degraded', latencyMs: 240 } });
+    assert.strictEqual(rules.evaluatePing(doc, { '10.0.0.1': {} }, {})[0].severity, null);
+    assert.strictEqual(rules.evaluatePing(doc, { '10.0.0.1': {} }, { degradedWarn: true })[0].severity, 'warn');
+});
+test('ping: a watched key missing from the feed emits nothing (missing machinery ages it out)', () => {
+    const doc = pingDoc({ '10.0.0.1': { state: 'up' } });
+    assert.strictEqual(rules.evaluatePing(doc, { '10.9.9.9': {} }, {}).length, 0);
+});
+test('ping: malformed entries are skipped, not thrown', () => {
+    const doc = pingDoc({ '10.0.0.1': 'garbage', '10.0.0.2': null, '10.0.0.3': { state: 'down' } });
+    const out = rules.evaluatePing(doc, { '10.0.0.1': {}, '10.0.0.2': {}, '10.0.0.3': {} }, {});
+    assert.strictEqual(out.length, 1);
+    assert.strictEqual(out[0].key, 'ping:10.0.0.3');
+});
+
 console.log(`ok - ${passed} tests passed`);

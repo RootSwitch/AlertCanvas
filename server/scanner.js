@@ -19,6 +19,7 @@ let scanning = false;
 
 // Last-scan snapshot for /api/status and /api/sources.
 let lastScan = { ts: null, ok: false, error: 'not scanned yet', feed: null };
+let lastPingDoc = null;   // last parseable ping feed, for the Watching opt-in list
 let lastDoc = null;
 
 function intSetting(key, dflt) {
@@ -40,9 +41,10 @@ function readConfig() {
     };
 }
 
-// Read + judge the feed. Returns { ok, error, doc, generatedAt, ageSec, staleAfterS }.
-function readFeed() {
-    const file = getSetting('status_file');
+// Read + judge a feed file. Returns { ok, error, doc, generatedAt, ageSec, staleAfterS }.
+// Works for both feeds: SNMPCanvas's snmp-status.json (generatedAt) and
+// PingCanvas's status files (generated) - the stamp parse below takes either.
+function readFeed(file) {
     let raw, mtimeMs = null;
     try {
         mtimeMs = fs.statSync(file).mtimeMs;
@@ -52,7 +54,9 @@ function readFeed() {
     }
     let doc;
     try {
-        doc = JSON.parse(raw);
+        // Strip a UTF-8 BOM: PowerShell writers (the PingCanvas poller, or an
+        // operator's Out-File) prepend one, and JSON.parse rejects it.
+        doc = JSON.parse(raw.replace(/^\uFEFF/, ''));
     } catch (_) {
         return { ok: false, error: `${file} is not valid JSON`, doc: null };
     }
@@ -124,7 +128,7 @@ async function tick() {
     try {
         const now = nowS();
         const cfg = readConfig();
-        const feed = readFeed();
+        const feed = readFeed(getSetting('status_file'));
 
         // Evaluation must never kill the scan loop: a feed entry with a shape
         // rules.js can't digest degrades to "feed bad" and rides the watchdog
@@ -170,6 +174,40 @@ async function tick() {
             label: feed.ok ? 'status feed' : `status feed - ${feed.error}`,
             value: null, threshold: null, unit: ''
         });
+
+        // --- the ping feed (PingCanvas) --------------------------------------
+        // Always read it (the Watching page's opt-in list needs the roster
+        // even before anything is watched), but only EVALUATE and only run
+        // its watchdog once at least one device is opted in - a deployment
+        // that never uses ping alerting must never alarm about a feed it
+        // never asked for.
+        let pingWatch = {};
+        try { pingWatch = JSON.parse(getSetting('ping_watch') || '{}') || {}; } catch (_) { pingWatch = {}; }
+        const pingArmed = Object.keys(pingWatch).length > 0;
+        const pingFeed = readFeed(getSetting('ping_status_file'));
+        if (pingFeed.doc) lastPingDoc = pingFeed.doc;
+        lastScan.pingFeed = {
+            ok: pingFeed.ok, error: pingFeed.ok ? null : pingFeed.error, armed: pingArmed,
+            generatedAt: pingFeed.generatedAt || null, ageSec: pingFeed.ageSec ?? null
+        };
+        if (pingArmed) {
+            if (pingFeed.ok) {
+                try {
+                    conditions.push(...rules.evaluatePing(pingFeed.doc, pingWatch,
+                        { degradedWarn: getSetting('ping_degraded_warn') === '1' }));
+                } catch (err) {
+                    pingFeed.ok = false;
+                    pingFeed.error = `ping feed shape not understood: ${err.message}`;
+                }
+            }
+            conditions.push({
+                key: 'watchdog:pingfeed', severity: pingFeed.ok ? null : 'crit', frozen: false,
+                kind: 'watchdog', host: null, code: null,
+                label: pingFeed.ok ? 'ping status feed' : `ping status feed - ${pingFeed.error}`,
+                value: null, threshold: null, unit: ''
+            });
+            if (lastScan.watching) lastScan.watching.pingDevices = Object.keys(pingWatch).length;
+        }
 
         const events = []; // { type, id }
 
@@ -446,6 +484,7 @@ function getStatus() {
         lastScanOk: lastScan.ok,
         lastScanError: lastScan.error,
         feed: lastScan.feed,
+        pingFeed: lastScan.pingFeed || null,
         watching: lastScan.watching || null,
         counts,
         emailError: notify.getLastEmailError(),
@@ -454,5 +493,6 @@ function getStatus() {
 }
 
 function getSnapshot() { return lastDoc; }
+function getPingSnapshot() { return lastPingDoc; }
 
-module.exports = { start, stop, restart, tick, getStatus, getSnapshot, getConfig: readConfig };
+module.exports = { start, stop, restart, tick, getStatus, getSnapshot, getPingSnapshot, getConfig: readConfig };

@@ -23,8 +23,11 @@ function detailFor(alert) {
     switch (alert.kind) {
         case 'device-down': return 'not reporting in the status feed (unreachable or powered off)';
         case 'if-down':     return 'link is down';
+        case 'ping-down':   return alert.severity === 'warn'
+            ? `answering ping slowly${alert.value != null ? ` (${alert.value} ms)` : ''}`
+            : 'not answering ping';
         case 'reboot':      return 'recently rebooted';
-        case 'watchdog':    return 'the SNMPCanvas status feed is unavailable or stale';
+        case 'watchdog':    return 'a status feed is unavailable or stale';
         default:            return alert.value != null ? `value ${alert.value}${unit}` : 'state changed';
     }
 }

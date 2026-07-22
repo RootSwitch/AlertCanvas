@@ -203,6 +203,8 @@ feed path in Settings or `STATUS_FILE`).
 | Interface errors / discards | 1/10 and 5/50 pkt/s | >= |
 | Interface utilization (% of link speed) | warn 80, crit 95 | >= |
 | Device down (SNMP unreachable) | crit | - |
+| Ping device down (PingCanvas feed, opt-in per device) | crit | - |
+| Ping device degraded (high latency) | off (opt-in warn) | - |
 | Stale, missing, or unreadable status file | crit | - |
 
 Per-kind defaults apply everywhere; overrides change or mute a single
@@ -211,11 +213,28 @@ one alarm, not one per interface. Unreadable values (`null` or garbage)
 freeze an alarm rather than clearing it; a value that disappears from the
 feed entirely auto-clears after a configurable number of scans.
 
+## Ping alerting: the devices SNMP can't see
+
+Some things you monitor don't speak SNMP - your ISPs' gateways, an internet
+canary, a landlord's switch. PingCanvas already pings them; AlertCanvas can
+alert on them by reading the poller's combined status file
+(`status-all.json`, which the suite's shared-data layout puts in the same
+directory as the SNMP feed - no extra mount).
+
+It is **opt-in per device**: the Watching page lists everything in the ping
+feed with a checkbox, and only checked devices alarm (crit on down; a warn
+on degraded is a separate Settings toggle). Leave devices that already have
+SNMP device-down alarms unchecked, or one outage alarms twice. Each watched
+device takes an optional notification label, so the 2 AM email says
+`Primary ISP (fiber) ping` rather than a bare address. The ping feed gets
+its own stale-feed watchdog - but only once at least one device is watched,
+so an SNMP-only install never hears about a feed it doesn't use.
+
 ## Exporting is what arms alerting
 
-AlertCanvas only ever sees `snmp-status.json`. That one fact explains every
-"why didn't it alert?" you will ever have, so its consequences are worth
-spelling out once:
+For everything else, AlertCanvas only ever sees `snmp-status.json`. That
+fact explains every "why didn't it alert?" you will ever have, so its
+consequences are worth spelling out once:
 
 - **Only exported values can alarm.** In SNMPCanvas, *tracking* a value
   polls and graphs it; the separate *export* checkbox is what puts it in

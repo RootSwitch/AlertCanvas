@@ -184,6 +184,12 @@ const DEFAULTS = {
     thresholds: JSON.stringify(DEFAULT_THRESHOLDS),
     if_rules: JSON.stringify(DEFAULT_IF_RULES),
     device_down: JSON.stringify({ enabled: true, severity: 'crit' }),
+    // ping alerting (PingCanvas's status-all.json - reachability for devices
+    // SNMPCanvas doesn't poll, e.g. ISP gateways). Opt-in per device: the
+    // watch map is { feedKey: { label? } }, empty = the feature is inert.
+    ping_status_file: '/status/status-all.json',
+    ping_watch: '{}',
+    ping_degraded_warn: '0',
     // email
     email_enabled: '0',
     smtp_host: '',

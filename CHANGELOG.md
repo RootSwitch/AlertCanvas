@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 - 2026-07-22
+
+- Ping alerting: alarm on the devices PingCanvas pings but SNMPCanvas
+  does not poll - ISP gateways, an internet canary, anything on a board.
+  AlertCanvas reads the poller's combined status file (status-all.json;
+  the suite's shared layout already puts it in the mounted /status dir).
+  Strictly opt-in per device via checkboxes on the Watching page, so a
+  device covered by SNMP device-down alarms never alarms twice; each
+  watched device takes an optional notification label ("Primary ISP
+  (fiber)" instead of a bare address, with the feed's board name as the
+  fallback). Down raises crit; a warn on degraded (high latency) is a
+  separate Settings toggle. The ping feed gets its own stale-feed
+  watchdog, armed only once at least one device is watched - an
+  SNMP-only install never hears about a feed it doesn't use.
+- Feed reading tolerates a UTF-8 BOM (PowerShell writers - including
+  PingCanvas's own poller path on Windows - prepend one, and it used to
+  read as "not valid JSON").
+
 ## 0.3.0 - 2026-07-21
 
 - Device up/down alarms now cover every device with ANY exported value:

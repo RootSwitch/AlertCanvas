@@ -335,4 +335,34 @@ function explain(doc, config) {
     return { metrics, interfaces, devices };
 }
 
-module.exports = { evaluate, explain, detectReboots, LOWER_IS_BAD, METRIC_KINDS };
+// --- the ping feed (PingCanvas status-all.json) ------------------------------
+// Alerting on reachability for devices PingCanvas pings but SNMPCanvas does
+// not poll - ISP gateways, an internet canary, anything on a board. STRICTLY
+// OPT-IN per device (the `watch` map): a device monitored by both feeds would
+// otherwise raise device-down AND ping-down for one outage, so the operator
+// checks only ping-only devices. Feed shape (the poller's Write-StatusFile):
+//   { generated, pollIntervalSec, devices: { key: { state, latencyMs, since, name? } } }
+// where key is the board device's Monitor ID or IP.
+function evaluatePing(doc, watch, opts) {
+    const out = [];
+    const devices = (doc && doc.devices) || {};
+    const degradedWarn = !!(opts && opts.degradedWarn);
+    for (const [key, w] of Object.entries(watch || {})) {
+        const e = devices[key];
+        if (!e || typeof e !== 'object') continue;   // gone from the feed: the missing-scans machinery ages the alert out
+        const label = `${(w && w.label) || e.name || key} ping`;
+        const severity = e.state === 'down' ? 'crit'
+            : (e.state === 'degraded' && degradedWarn) ? 'warn'
+            : null;
+        out.push({
+            key: `ping:${key}`, severity, frozen: false,
+            kind: 'ping-down', host: (w && w.label) || e.name || key, code: null,
+            label,
+            value: typeof e.latencyMs === 'number' ? e.latencyMs : null,
+            threshold: null, unit: 'ms'
+        });
+    }
+    return out;
+}
+
+module.exports = { evaluate, evaluatePing, explain, detectReboots, LOWER_IS_BAD, METRIC_KINDS };

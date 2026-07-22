@@ -399,6 +399,13 @@
 
     async function renderWatching() {
         setNav('watching', true);
+        // Don't redraw out from under someone typing a ping label - skip this
+        // refresh cycle and try again next interval.
+        const ae = document.activeElement;
+        if (ae && ae.dataset && ae.dataset.pl !== undefined) {
+            setAutoRefresh(renderWatching, 30000);
+            return;
+        }
         let w, status;
         try {
             [w, status] = await Promise.all([GET('/api/watching'), GET('/api/status')]);
@@ -411,9 +418,63 @@
         }
         if (!onWatchingView()) return; // user navigated away mid-fetch
 
+        // Ping panel: the PingCanvas feed's roster with per-device opt-in.
+        // Built once, shown whether or not the SNMP feed is up - a ping-only
+        // deployment is legitimate.
+        const ping = w.ping || { available: false, devices: [] };
+        const pingRows = ping.devices.map((d) => {
+            const stCls = d.state === 'down' ? 'cell-crit' : d.state === 'degraded' ? 'cell-warn' : '';
+            return `
+            <tr${d.watched ? '' : ' style="opacity:0.6"'}>
+                <td><input type="checkbox" data-pk="${esc(d.key)}" ${d.watched ? 'checked' : ''} title="Alert when this device stops answering ping"></td>
+                <td>${esc(d.name || d.key)}${d.name ? ` <span class="muted small">${esc(d.key)}</span>` : ''}</td>
+                <td class="${stCls}">${esc(d.state)}</td>
+                <td class="num hide-sm">${d.latencyMs != null ? d.latencyMs + ' ms' : '-'}</td>
+                <td><input type="text" data-pl="${esc(d.key)}" value="${esc(d.label)}" placeholder="${esc(d.name || d.key)}"
+                    ${d.watched ? '' : 'disabled'} maxlength="100" style="width:160px"
+                    title="Name used in notifications (blank = the board label or the key)"></td>
+            </tr>`;
+        }).join('');
+        const pingPanel = `
+        <div class="panel">
+            <h2>Ping devices <span class="muted" style="font-weight:400;font-size:12px">PingCanvas feed</span></h2>
+            <div class="section-note">Reachability alerting for devices PingCanvas pings but SNMPCanvas
+                does not poll - ISP gateways, an internet canary, anything on a board. Opt-in per
+                device: checked devices raise crit when down${ping.degradedWarn ? ' and warn when degraded' : ''}.
+                Leave devices that already have device-down alarms above unchecked, or one outage
+                alarms twice.</div>
+            ${!ping.available
+                ? `<div class="muted">No ping feed at <code>${esc(ping.file || '')}</code> - mount the shared data
+                   dir PingCanvas's poller writes to (the suite layout already does) or set the path in Settings.</div>`
+                : ping.devices.length === 0
+                    ? '<div class="muted">The ping feed carries no devices yet.</div>'
+                    : `<table class="list">
+                <thead><tr><th title="Alert on this device">Alert</th><th>Device</th><th>State</th><th class="num hide-sm">Latency</th><th>Notification label</th></tr></thead>
+                <tbody>${pingRows}</tbody>
+            </table>`}
+        </div>`;
+        const wirePing = () => {
+            $main.querySelectorAll('input[data-pk]').forEach((cb) => cb.addEventListener('change', async () => {
+                const key = cb.dataset.pk;
+                const labelInput = $main.querySelector(`input[data-pl="${CSS.escape(key)}"]`);
+                try {
+                    await api('POST', '/api/ping-watch', { key, watched: cb.checked, label: labelInput ? labelInput.value : '' });
+                } catch (e) { /* re-render below shows truth */ }
+                renderWatching();
+            }));
+            $main.querySelectorAll('input[data-pl]').forEach((inp) => inp.addEventListener('change', async () => {
+                const key = inp.dataset.pl;
+                const cb = $main.querySelector(`input[data-pk="${CSS.escape(key)}"]`);
+                if (!cb || !cb.checked) return;
+                try { await api('POST', '/api/ping-watch', { key, watched: true, label: inp.value }); } catch (e) { /* keep typing */ }
+            }));
+        };
+
         if (!w.available) {
             $main.innerHTML = `<div class="page-head"><h1>Watching</h1></div>
-            <div class="panel"><div class="muted">No feed read yet${status.lastScanError ? ` - ${esc(status.lastScanError)}` : ''}.</div></div>`;
+            <div class="panel"><div class="muted">No feed read yet${status.lastScanError ? ` - ${esc(status.lastScanError)}` : ''}.</div></div>
+            ${pingPanel}`;
+            wirePing();
             return;
         }
 
@@ -491,7 +552,9 @@
                 <thead><tr><th>Device</th><th>Interface</th><th>Link</th><th class="num">Errors</th><th class="num">Discards</th><th class="num">Util</th><th>State</th></tr></thead>
                 <tbody>${ifRows}</tbody>
             </table>`}
-        </div>`;
+        </div>
+        ${pingPanel}`;
+        wirePing();
         setAutoRefresh(renderWatching, 30000);
     }
 
@@ -649,6 +712,10 @@
                 <label>Stale after (s)</label><input type="number" id="set-staleAfterS" value="${s.staleAfterS}" min="0" title="0 = automatic: 3x the feed's own poll interval, at least 120s">
                 <label>Missing scans to clear</label><input type="number" id="set-missingScansToClear" value="${s.missingScansToClear}" min="1" title="Scans a value can vanish from the feed before its alarm auto-clears">
                 <label>Reminder interval (s)</label><input type="number" id="set-renotifyIntervalS" value="${s.renotifyIntervalS}" min="0" title="0 = off. Re-send notifications for unacknowledged active alarms this often.">
+                <label title="PingCanvas's combined status file - powers the ping-device opt-ins on Watching">Ping status file path</label><input type="text" id="set-pingStatusFile" value="${esc(s.pingStatusFile)}">
+            </div>
+            <div class="form-actions">
+                <label title="Watched ping devices also raise a warn while the poller reports them degraded (high latency)"><input type="checkbox" id="set-pingDegradedWarn" ${s.pingDegradedWarn ? 'checked' : ''}> Warn on degraded ping devices</label>
             </div>
             <div class="form-actions"><button class="btn-primary" id="save-scan">Save</button><span id="scan-msg"></span></div>
         </div>
@@ -864,6 +931,8 @@
 
         $('save-scan').addEventListener('click', () => save('scan-msg', {
             statusFile: $('set-statusFile').value,
+            pingStatusFile: $('set-pingStatusFile').value,
+            pingDegradedWarn: $('set-pingDegradedWarn').checked,
             scanIntervalS: $('set-scanIntervalS').value,
             raiseScans: $('set-raiseScans').value,
             clearScans: $('set-clearScans').value,

@@ -122,6 +122,7 @@ function alertSummary(a) {
 
 const SETTING_KEYS = {
     statusFile: 'status_file',
+    pingStatusFile: 'ping_status_file', pingDegradedWarn: 'ping_degraded_warn',
     scanIntervalS: 'scan_interval_s', raiseScans: 'raise_scans', clearScans: 'clear_scans',
     staleAfterS: 'stale_after_s', missingScansToClear: 'missing_scans_to_clear',
     renotifyIntervalS: 'renotify_interval_s', retentionDays: 'retention_days',
@@ -148,7 +149,7 @@ const INT_RANGE = {
     smtp_port: [1, 65535], syslog_port: [1, 65535], syslog_facility: [0, 23],
     syslog_sev_crit: [0, 7], syslog_sev_warn: [0, 7], syslog_sev_clear: [0, 7]
 };
-const BOOL_KEYS = new Set(['email_enabled', 'syslog_enabled', 'ntfy_enabled', 'smtp_allow_self_signed', 'reboot_detect']);
+const BOOL_KEYS = new Set(['email_enabled', 'syslog_enabled', 'ntfy_enabled', 'smtp_allow_self_signed', 'reboot_detect', 'ping_degraded_warn']);
 const SCAN_KEYS = new Set(['status_file', 'scan_interval_s']);
 
 // --- route table ---
@@ -237,12 +238,44 @@ const routes = [
     } },
 
     // The Watching view: every value in the feed with its effective rule and
-    // how the current reading scores against it.
+    // how the current reading scores against it. The ping section lists the
+    // PingCanvas feed's roster with the opt-in state per device.
     { method: 'GET', path: /^\/api\/watching$/, handler: (req, res) => {
         const doc = scanner.getSnapshot();
-        if (!doc) return ok(res, { available: false, metrics: [], interfaces: [], devices: [] });
+        let watch = {};
+        try { watch = JSON.parse(getSetting('ping_watch') || '{}') || {}; } catch (_) { watch = {}; }
+        const pingDoc = scanner.getPingSnapshot();
+        const ping = pingDoc && pingDoc.devices && typeof pingDoc.devices === 'object'
+            ? { available: true, generated: pingDoc.generated || null,
+                degradedWarn: getSetting('ping_degraded_warn') === '1',
+                devices: Object.entries(pingDoc.devices).map(([key, e]) => ({
+                    key, name: (e && e.name) || null,
+                    state: (e && e.state) || 'unknown',
+                    latencyMs: e && typeof e.latencyMs === 'number' ? e.latencyMs : null,
+                    since: (e && e.since) || null,
+                    watched: !!watch[key],
+                    label: (watch[key] && watch[key].label) || ''
+                })).sort((a, b) => String(a.name || a.key).localeCompare(String(b.name || b.key))) }
+            : { available: false, file: getSetting('ping_status_file'), devices: [] };
+        if (!doc) return ok(res, { available: false, metrics: [], interfaces: [], devices: [], ping });
         const ex = rules.explain(doc, scanner.getConfig());
-        ok(res, { available: true, generatedAt: doc.generatedAt || null, ...ex });
+        ok(res, { available: true, generatedAt: doc.generatedAt || null, ...ex, ping });
+    } },
+
+    // Toggle / label a ping-watched device. Body: { key, watched, label? }.
+    { method: 'POST', path: /^\/api\/ping-watch$/, handler: (req, res, p, body) => {
+        const key = String(body.key || '').trim();
+        if (!key || key.length > 200) return bad(res, 'key is required.');
+        let watch = {};
+        try { watch = JSON.parse(getSetting('ping_watch') || '{}') || {}; } catch (_) { watch = {}; }
+        if (body.watched) {
+            const label = String(body.label || '').trim().slice(0, 100);
+            watch[key] = label ? { label } : {};
+        } else {
+            delete watch[key];
+        }
+        setSetting('ping_watch', JSON.stringify(watch));
+        ok(res, { watched: !!watch[key] });
     } },
 
     { method: 'POST', path: /^\/api\/alerts\/(\d+)\/ack$/, handler: (req, res, params) => {
