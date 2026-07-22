@@ -35,8 +35,12 @@ function clientIp(req) {
     if (process.env.TRUST_PROXY === '1') {
         const xff = req.headers['x-forwarded-for'];
         if (xff) {
-            const first = String(xff).split(',')[0].trim();
-            if (first) { return first; }
+            // A trusted proxy APPENDS the client IP it observed, so the LAST
+            // hop is the one this operator's proxy vouches for; earlier hops are
+            // client-supplied and spoofable. Assumes a single reverse proxy -
+            // the documented topology.
+            const hops = String(xff).split(',').map((s) => s.trim()).filter(Boolean);
+            if (hops.length) { return hops[hops.length - 1]; }
         }
     }
     return req.socket.remoteAddress || 'unknown';
