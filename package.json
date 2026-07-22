@@ -1,6 +1,6 @@
 {
   "name": "alertcanvas",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Lightweight self-hosted alerting for the Canvas suite: watch SNMPCanvas's snmp-status.json, evaluate thresholds, and raise/clear alerts by email and syslog.",
   "license": "Unlicense",
   "repository": {

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 - 2026-07-21
+
+- Device up/down alarms now cover every device with ANY exported value:
+  SNMPCanvas's feed (schema v3) carries a devices[] roster, and the
+  device-down rule reads it - a VM exporting only its CPU or a UPS
+  exporting only battery gets a down alarm instead of silently freezing.
+  Older feeds without the roster keep the previous interface-based behavior
+- New `state` kind (binary status alarms - UPS on battery, fault flags):
+  alerts at crit by default, with the device's own wording carried through
+  ("Power On battery"); notifications say "reporting an alarm condition"
+  instead of "value 1 (threshold 1)"
+- New `meter` kind (arbitrary-unit readings - amps, volts) accepted from
+  the feed; no universal default, alert via per-target overrides
+- Notification templates gained kind-aware {{detail}} and {{reading}}
+  variables, so value-less alarms (device down, link down, reboot, feed
+  failure) read as plain statements instead of "value -- (threshold --)";
+  stored templates still matching an old default upgrade automatically,
+  customized templates are left alone
+- README: new "Exporting is what arms alerting" section - export gating,
+  device up/down requirements, scan-rate vs poll-rate interaction, and how
+  this relates to what PingCanvas displays
+- Fixed: unauthenticated API requests double-wrote a 404 over the 401
+  (ERR_HTTP_HEADERS_SENT in the server log on every pre-login page load)
+- Settings: the thresholds table gained the state row; the template
+  reference documents the new variables
+
 ## 0.2.0 - 2026-07-21
 
 - Review pass before first publication: feed-shape failures now degrade to
