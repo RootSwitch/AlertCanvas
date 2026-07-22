@@ -15,7 +15,9 @@ turns those diagrams into a live reachability wall,
 [**SNMPCanvas**](https://github.com/RootSwitch/SNMPCanvas) gathers the
 performance history and exports chosen values to `snmp-status.json`,
 [**SyslogCanvas**](https://github.com/RootSwitch/SyslogCanvas) remembers
-what your devices said - and AlertCanvas is the one that taps you on the
+what your devices said,
+[**LaunchCanvas**](https://github.com/RootSwitch/LaunchCanvas) signs you
+into all of them at once - and AlertCanvas is the one that taps you on the
 shoulder.
 
 The family's small-footprint ethos carries over: one container, one SQLite
@@ -312,6 +314,7 @@ dead-man's switch: if AlertCanvas itself dies, Kuma notices that too.
 | `TLS_CERT` / `TLS_KEY` | `$DATA/certs/server.crt|key` | PEM cert/key pair; HTTPS turns on when both exist |
 | `ADMIN_PASSWORD` | - | Pre-set the UI password (otherwise first-run setup page) |
 | `ALERTCANVAS_SECRET` | - | If set, the SMTP password and ntfy token are AES-256-GCM encrypted at rest |
+| `SUITE_SECRET` | - | Opt-in suite single sign-on: accept signed login tokens from the [LaunchCanvas](https://github.com/RootSwitch/LaunchCanvas) portal (same value across the suite; see its README for the security model) |
 | `COOKIE_SECURE` | auto | `Secure` cookies: on with HTTPS, off with HTTP; set to override |
 | `TRUST_PROXY` | - | `1` = honor `X-Forwarded-For` for the login limiter (behind a reverse proxy) |
 | `TZ` | UTC | Timezone for log timestamps |
@@ -328,6 +331,13 @@ AlertCanvas is a networked app with a small, deliberate threat model:
   you want to go further. The first-run setup page belongs to whoever
   reaches it first - claim it promptly or pre-set `ADMIN_PASSWORD`.
   Changing the password evicts every other session.
+- With `SUITE_SECRET` set, a signed token minted by the
+  [LaunchCanvas](https://github.com/RootSwitch/LaunchCanvas) portal also
+  signs you in (verified per request, no local session minted). Anyone
+  holding that secret can mint valid tokens, so treat it like the other
+  suite secrets; the LaunchCanvas README documents the full model,
+  including revocation and the host-wide cookie caveat. Unset, the token
+  path is inert.
 - AlertCanvas holds no device credentials at all - its secrets are the SMTP
   password and the optional ntfy token. By default the protection is
   filesystem permissions on the `/data` volume; set `ALERTCANVAS_SECRET`
@@ -417,6 +427,6 @@ sister project, and the feed contract belongs to
 ## License
 
 [The Unlicense](LICENSE) - public domain, same as CrossCanvas, PingCanvas,
-SNMPCanvas, and SyslogCanvas. Use it, fork it, ship it at work, no
-attribution required. (Dependencies keep their own licenses in
+SNMPCanvas, SyslogCanvas, and LaunchCanvas. Use it, fork it, ship it at
+work, no attribution required. (Dependencies keep their own licenses in
 `node_modules/` when you install or ship an image.)
