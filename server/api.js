@@ -242,19 +242,24 @@ const routes = [
     // PingCanvas feed's roster with the opt-in state per device.
     { method: 'GET', path: /^\/api\/watching$/, handler: (req, res) => {
         const doc = scanner.getSnapshot();
-        let watch = {};
-        try { watch = JSON.parse(getSetting('ping_watch') || '{}') || {}; } catch (_) { watch = {}; }
+        // Null prototype + own-property reads: feed keys are board-authored
+        // (hostile), and a key like 'constructor' or '__proto__' must not
+        // resolve through Object.prototype into a phantom "watched" state.
+        let watch = Object.create(null);
+        try { watch = Object.assign(Object.create(null), JSON.parse(getSetting('ping_watch') || '{}')); } catch (_) { /* keep empty */ }
         const pingDoc = scanner.getPingSnapshot();
+        const pingStatus = (scanner.getStatus().pingFeed) || null;
         const ping = pingDoc && pingDoc.devices && typeof pingDoc.devices === 'object'
             ? { available: true, generated: pingDoc.generated || null,
+                stale: !(pingStatus && pingStatus.ok),
                 degradedWarn: getSetting('ping_degraded_warn') === '1',
                 devices: Object.entries(pingDoc.devices).map(([key, e]) => ({
                     key, name: (e && e.name) || null,
                     state: (e && e.state) || 'unknown',
                     latencyMs: e && typeof e.latencyMs === 'number' ? e.latencyMs : null,
                     since: (e && e.since) || null,
-                    watched: !!watch[key],
-                    label: (watch[key] && watch[key].label) || ''
+                    watched: Object.prototype.hasOwnProperty.call(watch, key),
+                    label: (Object.prototype.hasOwnProperty.call(watch, key) && watch[key] && watch[key].label) || ''
                 })).sort((a, b) => String(a.name || a.key).localeCompare(String(b.name || b.key))) }
             : { available: false, file: getSetting('ping_status_file'), devices: [] };
         if (!doc) return ok(res, { available: false, metrics: [], interfaces: [], devices: [], ping });
@@ -266,8 +271,10 @@ const routes = [
     { method: 'POST', path: /^\/api\/ping-watch$/, handler: (req, res, p, body) => {
         const key = String(body.key || '').trim();
         if (!key || key.length > 200) return bad(res, 'key is required.');
-        let watch = {};
-        try { watch = JSON.parse(getSetting('ping_watch') || '{}') || {}; } catch (_) { watch = {}; }
+        // Null prototype: a key named '__proto__'/'constructor' must land as
+        // an own property (and delete cleanly), not walk the prototype chain.
+        let watch = Object.create(null);
+        try { watch = Object.assign(Object.create(null), JSON.parse(getSetting('ping_watch') || '{}')); } catch (_) { /* keep empty */ }
         if (body.watched) {
             const label = String(body.label || '').trim().slice(0, 100);
             watch[key] = label ? { label } : {};
@@ -275,7 +282,7 @@ const routes = [
             delete watch[key];
         }
         setSetting('ping_watch', JSON.stringify(watch));
-        ok(res, { watched: !!watch[key] });
+        ok(res, { watched: Object.prototype.hasOwnProperty.call(watch, key) });
     } },
 
     { method: 'POST', path: /^\/api\/alerts\/(\d+)\/ack$/, handler: (req, res, params) => {
@@ -383,7 +390,9 @@ const routes = [
                 if (name.startsWith('tmpl') && v.length > 2000) return bad(res, `${name} is too long (2000 chars max).`);
                 if (name === 'smtpMode' && !['none', 'starttls', 'tls'].includes(v)) return bad(res, 'smtpMode must be none, starttls, or tls.');
                 if (name === 'rebootSeverity' && !['warn', 'crit'].includes(v)) return bad(res, 'rebootSeverity must be warn or crit.');
-                if (name === 'statusFile' && !/\.json$/i.test(v.trim())) return bad(res, 'Status file path must end in .json');
+                // 'off' / blank = SNMP feed disabled (the ping-only pair mode).
+                if (name === 'statusFile' && v.trim() !== '' && v.trim().toLowerCase() !== 'off'
+                    && !/\.json$/i.test(v.trim())) return bad(res, "Status file path must end in .json (or be 'off' for a ping-only deployment).");
                 if (name === 'statusFile') v = v.trim();
             }
             changes.push([key, v]);

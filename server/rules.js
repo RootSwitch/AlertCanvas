@@ -354,8 +354,11 @@ function evaluatePing(doc, watch, opts) {
         const severity = e.state === 'down' ? 'crit'
             : (e.state === 'degraded' && degradedWarn) ? 'warn'
             : null;
+        // 'unknown' (the poller could not probe) is no evidence either way:
+        // freeze, like the metric rules do - it must not clear a live outage.
+        const known = e.state === 'up' || e.state === 'down' || e.state === 'degraded';
         out.push({
-            key: `ping:${key}`, severity, frozen: false,
+            key: `ping:${key}`, severity, frozen: !known,
             kind: 'ping-down', host: (w && w.label) || e.name || key, code: null,
             label,
             value: typeof e.latencyMs === 'number' ? e.latencyMs : null,

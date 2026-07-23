@@ -349,6 +349,14 @@ test('ping: a watched key missing from the feed emits nothing (missing machinery
     const doc = pingDoc({ '10.0.0.1': { state: 'up' } });
     assert.strictEqual(rules.evaluatePing(doc, { '10.9.9.9': {} }, {}).length, 0);
 });
+test('ping: unknown state freezes instead of clearing', () => {
+    const doc = pingDoc({ '10.0.0.1': { state: 'unknown', latencyMs: null } });
+    const [c] = rules.evaluatePing(doc, { '10.0.0.1': {} }, {});
+    assert.strictEqual(c.severity, null);
+    assert.strictEqual(c.frozen, true);
+    const [up] = rules.evaluatePing(pingDoc({ '10.0.0.1': { state: 'up', latencyMs: 5 } }), { '10.0.0.1': {} }, {});
+    assert.strictEqual(up.frozen, false);
+});
 test('ping: malformed entries are skipped, not thrown', () => {
     const doc = pingDoc({ '10.0.0.1': 'garbage', '10.0.0.2': null, '10.0.0.3': { state: 'down' } });
     const out = rules.evaluatePing(doc, { '10.0.0.1': {}, '10.0.0.2': {}, '10.0.0.3': {} }, {});

@@ -78,9 +78,9 @@ function readFeed(file) {
     const ageSec = newestMs > 0 ? Math.max(0, Math.round((Date.now() - newestMs) / 1000)) : null;
     if (ageSec == null) return { ok: false, error: 'feed has no parseable generatedAt', doc, staleAfterS };
     if (ageSec > staleAfterS) {
-        return { ok: false, error: `feed is stale (${ageSec}s old, limit ${staleAfterS}s)`, doc, ageSec, staleAfterS, generatedAt: doc.generatedAt };
+        return { ok: false, error: `feed is stale (${ageSec}s old, limit ${staleAfterS}s)`, doc, ageSec, staleAfterS, generatedAt: doc.generatedAt || doc.generated };
     }
-    return { ok: true, doc, ageSec, staleAfterS, generatedAt: doc.generatedAt };
+    return { ok: true, doc, ageSec, staleAfterS, generatedAt: doc.generatedAt || doc.generated };
 }
 
 const stmts = {
@@ -203,22 +203,26 @@ async function tick() {
             ok: pingFeed.ok, error: pingFeed.ok ? null : pingFeed.error, armed: pingArmed,
             generatedAt: pingFeed.generatedAt || null, ageSec: pingFeed.ageSec ?? null
         };
-        if (pingArmed) {
-            if (pingFeed.ok) {
-                try {
-                    conditions.push(...rules.evaluatePing(pingFeed.doc, pingWatch,
-                        { degradedWarn: getSetting('ping_degraded_warn') === '1' }));
-                } catch (err) {
-                    pingFeed.ok = false;
-                    pingFeed.error = `ping feed shape not understood: ${err.message}`;
-                }
+        if (pingArmed && pingFeed.ok) {
+            try {
+                conditions.push(...rules.evaluatePing(pingFeed.doc, pingWatch,
+                    { degradedWarn: getSetting('ping_degraded_warn') === '1' }));
+            } catch (err) {
+                pingFeed.ok = false;
+                pingFeed.error = `ping feed shape not understood: ${err.message}`;
             }
-            conditions.push({
-                key: 'watchdog:pingfeed', severity: pingFeed.ok ? null : 'crit', frozen: false,
-                kind: 'watchdog', host: null, code: null,
-                label: pingFeed.ok ? 'ping status feed' : `ping status feed - ${pingFeed.error}`,
-                value: null, threshold: null, unit: ''
-            });
+        }
+        // The ping watchdog condition is ALWAYS pushed: crit only while armed
+        // with a bad feed, clearing otherwise - so un-watching the last device
+        // resolves a raised watchdog through the normal machinery instead of
+        // stranding it as an unclearable alarm.
+        conditions.push({
+            key: 'watchdog:pingfeed', severity: pingArmed && !pingFeed.ok ? 'crit' : null, frozen: false,
+            kind: 'watchdog', host: null, code: null,
+            label: pingArmed && !pingFeed.ok ? `ping status feed - ${pingFeed.error}` : 'ping status feed',
+            value: null, threshold: null, unit: ''
+        });
+        if (pingArmed) {
             // In a ping-only deployment (SNMP feed off) the heartbeat still
             // has something real to report.
             if (!lastScan.watching) lastScan.watching = { metrics: 0, interfaces: 0, devices: 0, rules: 0 };
@@ -361,19 +365,26 @@ async function tick() {
             }
 
             // Anything still open but absent from the feed: the source was
-            // un-exported or renamed. Freeze while the feed itself is bad.
-            if (feed.ok) {
-                for (const row of open.values()) {
-                    row.missing_count += 1;
-                    if (row.missing_count >= missingScans) {
-                        if (row.state === 'pending') { stmts.delete.run(row.id); continue; }
-                        row.state = 'cleared'; row.cleared_ts = now; row.clear_reason = 'source-removed';
-                        saveRow(row);
-                        events.push({ type: 'clear', id: row.id });
-                        continue;
-                    }
+            // un-exported, un-watched, or renamed. Freeze while the OWNING
+            // feed itself is bad - per feed, or the two failure modes cross:
+            // a dead ping poller must not auto-clear a live ISP outage just
+            // because the SNMP feed is healthy, and a ping-only install
+            // (SNMP off forever) must still be able to age out an alarm
+            // whose device was un-watched. A deliberately-off/unarmed feed
+            // counts as "ok to age" - absence is then the operator's intent.
+            for (const row of open.values()) {
+                const pingOwned = String(row.alert_key).startsWith('ping:') || row.alert_key === 'watchdog:pingfeed';
+                const mayAge = pingOwned ? (pingFeed.ok || !pingArmed) : (feed.ok || !!feed.off);
+                if (!mayAge) continue;   // owning feed is bad: freeze, don't age
+                row.missing_count += 1;
+                if (row.missing_count >= missingScans) {
+                    if (row.state === 'pending') { stmts.delete.run(row.id); continue; }
+                    row.state = 'cleared'; row.cleared_ts = now; row.clear_reason = 'source-removed';
                     saveRow(row);
+                    events.push({ type: 'clear', id: row.id });
+                    continue;
                 }
+                saveRow(row);
             }
         })();
 

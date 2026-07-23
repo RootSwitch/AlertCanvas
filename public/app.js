@@ -442,7 +442,7 @@
                 does not poll - ISP gateways, an internet canary, anything on a board. Opt-in per
                 device: checked devices raise crit when down${ping.degradedWarn ? ' and warn when degraded' : ''}.
                 Leave devices that already have device-down alarms above unchecked, or one outage
-                alarms twice.</div>
+                alarms twice.${ping.stale ? ' <span class="warn-text">The ping feed is currently unreadable or stale - states shown may be old.</span>' : ''}</div>
             ${!ping.available
                 ? `<div class="muted">No ping feed at <code>${esc(ping.file || '')}</code> - mount the shared data
                    dir PingCanvas's poller writes to (the suite layout already does) or set the path in Settings.</div>`
@@ -471,10 +471,16 @@
         };
 
         if (!w.available) {
+            // Ping-only deployments live in this branch permanently, so it
+            // must say why the SNMP section is empty and keep refreshing.
+            const offMode = status.feed && status.feed.off;
             $main.innerHTML = `<div class="page-head"><h1>Watching</h1></div>
-            <div class="panel"><div class="muted">No feed read yet${status.lastScanError ? ` - ${esc(status.lastScanError)}` : ''}.</div></div>
+            <div class="panel"><div class="muted">${offMode
+                ? 'SNMP feed is off (ping-only deployment) - set a status file path in Settings to watch SNMPCanvas values.'
+                : `No feed read yet${status.lastScanError ? ` - ${esc(status.lastScanError)}` : ''}.`}</div></div>
             ${pingPanel}`;
             wirePing();
+            setAutoRefresh(renderWatching, 30000);
             return;
         }
 

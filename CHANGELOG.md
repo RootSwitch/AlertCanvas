@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.2 - 2026-07-22
+
+- Review fixes for ping alerting, found by an adversarial pass before
+  anyone hit them:
+  - The missing-source aging machinery is now gated PER FEED: a dead
+    ping poller no longer auto-clears a live ISP outage just because the
+    SNMP feed is healthy, and a ping-only install (SNMP off) can still
+    age out an alarm whose device was un-watched. The ping-feed watchdog
+    condition is always pushed (clearing when unarmed), so un-watching
+    the last device resolves a raised watchdog instead of stranding it.
+  - `state: "unknown"` in the ping feed freezes an alarm (no evidence
+    either way) instead of counting as recovered.
+  - Settings now accepts 'off' / blank for the status file path - the
+    documented ping-only mode was rejected by the ".json" validator, and
+    any install whose settings row predated 0.4.1 could never reach
+    ping-only mode at all.
+  - Feed keys named after Object.prototype members (a board could name a
+    Monitor ID "constructor") no longer render as phantom-watched rows;
+    watch lookups are own-property on a null-prototype map.
+  - The Watching page in ping-only mode now auto-refreshes, explains
+    that the SNMP feed is off rather than saying "No feed read yet",
+    and warns when the ping feed itself is unreadable or stale (the
+    roster shown may be old).
+  - `/api/status` pingFeed.generatedAt now reads the ping feed's
+    `generated` field (was always null).
+
 ## 0.4.1 - 2026-07-22
 
 - Ping-only deployments are first-class: set the status file path to
