@@ -418,6 +418,39 @@
         }
         if (!onWatchingView()) return; // user navigated away mid-fetch
 
+        // One-click mute, right where the noise is noticed - the counterpart
+        // of the ping opt-in checkboxes below. Mute creates disabled overrides
+        // (visible under Settings > Overrides, note "muted from Watching");
+        // Unmute deletes pure mutes but only re-enables overrides that carry a
+        // custom threshold or severity, so a tuned rule survives a mute cycle.
+        const muteBtn = (code, kinds, muted) => `
+            <button data-mute="${esc(code)}" data-kinds="${kinds}" data-unmute="${muted ? 1 : 0}"
+                title="${muted ? 'Resume alerting on this target'
+                    : 'Stop alerting on this target - adds muted overrides you can manage under Settings'}">
+                ${muted ? 'Unmute' : 'Mute'}</button>`;
+        const wireMutes = () => {
+            $main.querySelectorAll('button[data-mute]').forEach((btn) => btn.addEventListener('click', async () => {
+                const code = btn.dataset.mute;
+                const unmute = btn.dataset.unmute === '1';
+                btn.disabled = true;
+                try {
+                    const { overrides } = await GET('/api/overrides');
+                    for (const kind of btn.dataset.kinds.split(',')) {
+                        const row = overrides.find((o) => o.scope === 'code' && o.code === code && o.kind === kind);
+                        if (!unmute) {
+                            if (!row) await api('POST', '/api/overrides', { scope: 'code', code, kind, enabled: false, note: 'muted from Watching' });
+                            else if (row.enabled) await api('PATCH', `/api/overrides/${row.id}`, { enabled: false });
+                        } else if (row && !row.enabled) {
+                            const customized = row.warn != null || row.crit != null || row.severity === 'warn';
+                            if (customized) await api('PATCH', `/api/overrides/${row.id}`, { enabled: true });
+                            else await api('DELETE', `/api/overrides/${row.id}`);
+                        }
+                    }
+                } catch (e) { /* re-render below shows truth */ }
+                renderWatching();
+            }));
+        };
+
         // Ping panel: the PingCanvas feed's roster with per-device opt-in.
         // Built once, shown whether or not the SNMP feed is up - a ping-only
         // deployment is legitimate.
@@ -493,6 +526,7 @@
                 <td class="hide-sm">${esc(m.kind)}</td>
                 <td>${ruleText(m.rule, m.unit, m.lowerIsBad, m.source, m.muted)}</td>
                 <td>${stateBadge(m.current, m.muted)}</td>
+                <td>${muteBtn(m.code, m.kind, m.muted)}</td>
             </tr>`).join('');
 
         const ifRows = w.interfaces
@@ -502,6 +536,15 @@
                 const link = i.down.muted ? '<span class="muted small">muted</span>'
                     : !i.down.rule ? '<span class="muted small">off</span>'
                     : `${esc(i.down.rule.severity)}${i.down.source !== 'default' ? ` <span class="muted small">(${esc(i.down.source)})</span>` : ''}`;
+                // Worst of the four aspects; "muted" only when EVERY
+                // aspect is muted - one muted rule must not hide a live
+                // warn on another.
+                const aspects = [i.errors, i.discards, i.util];
+                const worst = i.down.current === 'alarm' || aspects.some((a) => a.current === 'crit') ? 'crit'
+                    : aspects.some((a) => a.current === 'warn') ? 'warn'
+                    : aspects.some((a) => a.current === 'ok') || i.down.current === 'ok' ? 'ok'
+                    : null;
+                const allMuted = i.down.muted && aspects.every((a) => a.muted);
                 return `
             <tr>
                 <td>${esc(i.host)}</td>
@@ -510,18 +553,8 @@
                 ${aspectCell(i.errors, 'pps')}
                 ${aspectCell(i.discards, 'pps')}
                 ${aspectCell(i.util, '%')}
-                <td>${(() => {
-                    // Worst of the four aspects; "muted" only when EVERY
-                    // aspect is muted - one muted rule must not hide a live
-                    // warn on another.
-                    const aspects = [i.errors, i.discards, i.util];
-                    const worst = i.down.current === 'alarm' || aspects.some((a) => a.current === 'crit') ? 'crit'
-                        : aspects.some((a) => a.current === 'warn') ? 'warn'
-                        : aspects.some((a) => a.current === 'ok') || i.down.current === 'ok' ? 'ok'
-                        : null;
-                    const allMuted = i.down.muted && aspects.every((a) => a.muted);
-                    return stateBadge(worst, allMuted);
-                })()}</td>
+                <td>${stateBadge(worst, allMuted)}</td>
+                <td>${muteBtn(i.code, 'if-down,if-errors,if-discards,if-util', allMuted)}</td>
             </tr>`;
             }).join('');
 
@@ -546,7 +579,7 @@
             <h2>Host metrics</h2>
             ${w.metrics.length === 0 ? '<div class="muted">The feed carries no metrics.</div>' : `
             <table class="list">
-                <thead><tr><th>Host</th><th>Value</th><th class="hide-sm">Kind</th><th>Effective rule</th><th>State</th></tr></thead>
+                <thead><tr><th>Host</th><th>Value</th><th class="hide-sm">Kind</th><th>Effective rule</th><th>State</th><th></th></tr></thead>
                 <tbody>${metricRows}</tbody>
             </table>`}
         </div>
@@ -555,12 +588,13 @@
             <div class="section-note">${devSummary}. Stale-feed watchdog raises after ${status.feed && status.feed.staleAfterS ? status.feed.staleAfterS + 's' : 'the configured window'} without a fresh feed. Warn / crit cells; hover for the current reading.</div>
             ${w.interfaces.length === 0 ? '<div class="muted">The feed carries no interfaces.</div>' : `
             <table class="list">
-                <thead><tr><th>Device</th><th>Interface</th><th>Link</th><th class="num">Errors</th><th class="num">Discards</th><th class="num">Util</th><th>State</th></tr></thead>
+                <thead><tr><th>Device</th><th>Interface</th><th>Link</th><th class="num">Errors</th><th class="num">Discards</th><th class="num">Util</th><th>State</th><th></th></tr></thead>
                 <tbody>${ifRows}</tbody>
             </table>`}
         </div>
         ${pingPanel}`;
         wirePing();
+        wireMutes();
         setAutoRefresh(renderWatching, 30000);
     }
 
@@ -770,7 +804,10 @@
 
         <div class="panel">
             <h2>Overrides</h2>
-            <div class="section-note">Per-target exceptions to the defaults above: a different limit for one sensor, or a mute for a noisy port.</div>
+            <div class="section-note">Per-target exceptions to the defaults above: a different limit for one sensor, or a mute for a noisy port.
+                Threshold rules take warn/crit limits; link down and device down are on/off rules with no
+                thresholds - their override only picks the severity the alarm raises as. Untick On to mute a
+                target outright (the Mute buttons on Watching manage the same rows).</div>
             ${overrides.length === 0 ? '' : `
             <table class="list">
                 <thead><tr><th>Target</th><th>Kind</th><th class="num">Warn</th><th class="num">Crit / severity</th><th>On</th><th>Note</th><th></th></tr></thead>
@@ -785,7 +822,8 @@
                 <span id="ov-extra"></span>
                 <input type="number" step="any" id="ov-warn" placeholder="warn" style="width:80px;display:none">
                 <input type="number" step="any" id="ov-crit" placeholder="crit" style="width:80px;display:none">
-                <select id="ov-sev" style="display:none"><option value="crit">crit</option><option value="warn">warn</option></select>
+                <select id="ov-sev" style="display:none" title="On/off rule - no threshold; this is the severity the alarm raises as">
+                    <option value="crit">raise as crit</option><option value="warn">raise as warn</option></select>
                 <input type="text" id="ov-note" placeholder="note" style="width:140px;display:none">
                 <button class="btn-primary" id="ov-add" style="display:none">Add</button>
                 <span id="ov-msg"></span>
@@ -802,8 +840,8 @@
                     <option value="starttls" ${s.smtpMode === 'starttls' ? 'selected' : ''}>STARTTLS (587)</option>
                     <option value="tls" ${s.smtpMode === 'tls' ? 'selected' : ''}>Implicit TLS (465)</option>
                     <option value="none" ${s.smtpMode === 'none' ? 'selected' : ''}>None (25)</option></select>
-                <label>Username</label><input type="text" id="set-smtpUser" value="${esc(s.smtpUser)}" autocomplete="off">
-                <label>Password</label><input type="password" id="set-smtpPass" placeholder="${s.smtpPassSet ? '(saved - leave blank to keep)' : ''}" autocomplete="new-password">
+                <label title="Optional - leave blank for an unauthenticated relay. Independent of Security: TLS relays can still require login, port-25 relays often need none.">Username</label><input type="text" id="set-smtpUser" value="${esc(s.smtpUser)}" placeholder="blank = no authentication" autocomplete="off">
+                <label title="Only needed when the relay requires login.">Password</label><input type="password" id="set-smtpPass" placeholder="${s.smtpPassSet ? '(saved - leave blank to keep)' : ''}" autocomplete="new-password">
                 <label>Allow self-signed</label><span><input type="checkbox" id="set-smtpAllowSelfSigned" ${s.smtpAllowSelfSigned ? 'checked' : ''}></span>
                 <label>From</label><input type="text" id="set-smtpFrom" value="${esc(s.smtpFrom)}" placeholder="alertcanvas@example.com">
                 <label>To</label><input type="text" id="set-smtpTo" value="${esc(s.smtpTo)}" placeholder="you@example.com, oncall@example.com">
