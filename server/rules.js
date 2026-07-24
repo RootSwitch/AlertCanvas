@@ -326,9 +326,16 @@ function explain(doc, config) {
             },
             errors: level('errors', 'if-errors', worstOrNull(i.inErrorsPerSec, i.outErrorsPerSec)),
             discards: level('discards', 'if-discards', worstOrNull(i.inDiscardsPerSec, i.outDiscardsPerSec)),
+            // Unknown link speed means utilization has no VALUE, but its rule
+            // and mute state are still real. Hard-coding muted:false here made
+            // such a port permanently un-unmutable: "every aspect muted" could
+            // never become true, so the row kept offering Mute after it had
+            // already been muted, and only hand-deleting the overrides in
+            // Settings could undo it. Resolve it like the others; the value
+            // stays empty, which is the honest reading.
             util: i.speedBps > 0
                 ? level('util', 'if-util', null, worstBps == null ? undefined : (worstBps * 100) / i.speedBps)
-                : { rule: null, source: 'none', muted: false, value: null, current: null }
+                : level('util', 'if-util', null)
         });
     }
 
