@@ -20,6 +20,8 @@ what your devices said,
 into all of them at once - and AlertCanvas is the one that taps you on the
 shoulder.
 
+**Install the whole suite in one command:** the [canvas-suite](https://github.com/RootSwitch/canvas-suite) repo is the family's landing page, with one-shot install scripts for the full six-app stack or a Pi-class PingCanvas + AlertCanvas pair.
+
 The family's small-footprint ethos carries over: one container, one SQLite
 file, two runtime dependencies, and a frontend that is plain HTML/CSS/JS
 with no build step.
