@@ -421,9 +421,15 @@
         // One-click mute, right where the noise is noticed - the counterpart
         // of the ping opt-in checkboxes below. Mute creates disabled overrides
         // (visible under Settings > Overrides, note "muted from Watching");
-        // Unmute deletes pure mutes but only re-enables overrides that carry a
-        // custom threshold or severity, so a tuned rule survives a mute cycle.
-        const muteBtn = (code, kinds, muted) => `
+        // Unmute deletes only rows this flow itself created (identified by
+        // the note) and re-enables anything else, so a hand-made override -
+        // custom threshold, escalated severity, an operator's note - survives
+        // a mute cycle. A target muted by a HOST-WIDE (host-kind) override is
+        // outside this button's per-target jurisdiction: unmuting it here
+        // would silently unmute every sibling on the host, so the button
+        // renders disabled and points at Settings instead.
+        const muteBtn = (code, kinds, muted, hostMuted) => hostMuted ? `
+            <button disabled title="Muted by a host-wide override - manage it under Settings > Overrides">Unmute</button>` : `
             <button data-mute="${esc(code)}" data-kinds="${kinds}" data-unmute="${muted ? 1 : 0}"
                 title="${muted ? 'Resume alerting on this target'
                     : 'Stop alerting on this target - adds muted overrides you can manage under Settings'}">
@@ -441,9 +447,16 @@
                             if (!row) await api('POST', '/api/overrides', { scope: 'code', code, kind, enabled: false, note: 'muted from Watching' });
                             else if (row.enabled) await api('PATCH', `/api/overrides/${row.id}`, { enabled: false });
                         } else if (row && !row.enabled) {
-                            const customized = row.warn != null || row.crit != null || row.severity === 'warn';
-                            if (customized) await api('PATCH', `/api/overrides/${row.id}`, { enabled: true });
-                            else await api('DELETE', `/api/overrides/${row.id}`);
+                            // Delete ONLY what the mute flow itself created (its
+                            // note is the marker). Judging by fields instead got
+                            // this wrong once: an if-down override escalating a
+                            // warn default to crit has no levels and the default
+                            // severity, yet deleting it would erase the operator's
+                            // escalation. Re-enable is always the safe direction.
+                            const pureMute = row.warn == null && row.crit == null &&
+                                row.note === 'muted from Watching';
+                            if (pureMute) await api('DELETE', `/api/overrides/${row.id}`);
+                            else await api('PATCH', `/api/overrides/${row.id}`, { enabled: true });
                         }
                     }
                 } catch (e) { /* re-render below shows truth */ }
@@ -526,7 +539,7 @@
                 <td class="hide-sm">${esc(m.kind)}</td>
                 <td>${ruleText(m.rule, m.unit, m.lowerIsBad, m.source, m.muted)}</td>
                 <td>${stateBadge(m.current, m.muted)}</td>
-                <td>${muteBtn(m.code, m.kind, m.muted)}</td>
+                <td>${muteBtn(m.code, m.kind, m.muted, m.muted && m.source === 'host override')}</td>
             </tr>`).join('');
 
         const ifRows = w.interfaces
@@ -545,6 +558,10 @@
                     : aspects.some((a) => a.current === 'ok') || i.down.current === 'ok' ? 'ok'
                     : null;
                 const allMuted = i.down.muted && aspects.every((a) => a.muted);
+                // Fully muted AND every mute comes from a host-kind override:
+                // there is nothing per-target for the button to undo.
+                const hostMuted = allMuted && [i.down, ...aspects]
+                    .filter((x) => x.muted).every((x) => x.source === 'host override');
                 return `
             <tr>
                 <td>${esc(i.host)}</td>
@@ -554,7 +571,7 @@
                 ${aspectCell(i.discards, 'pps')}
                 ${aspectCell(i.util, '%')}
                 <td>${stateBadge(worst, allMuted)}</td>
-                <td>${muteBtn(i.code, 'if-down,if-errors,if-discards,if-util', allMuted)}</td>
+                <td>${muteBtn(i.code, 'if-down,if-errors,if-discards,if-util', allMuted, hostMuted)}</td>
             </tr>`;
             }).join('');
 
