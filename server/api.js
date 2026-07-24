@@ -196,7 +196,7 @@ const routes = [
         // admin account. A portal-authenticated user still may, to set a local
         // fallback password.
         if (auth.ssoEnabled() && !auth.authenticate(req))
-            return json(res, 403, { error: 'This app is part of a single sign-on suite - sign in through LaunchCanvas first.' });
+            return json(res, 403, { error: 'This app is part of a single sign-on suite - sign in through LaunchCanvas first. (No portal on this box? Set ADMIN_PASSWORD in the compose file for this app and restart, or remove SUITE_SECRET to restore the normal first-run setup.)' });
         if (!body.password || String(body.password).length < 8) return bad(res, 'Password must be at least 8 characters.');
         auth.setPassword(String(body.password));
         const token = auth.createSession();
@@ -219,7 +219,10 @@ const routes = [
 
     { method: 'POST', path: /^\/api\/logout$/, authRequired: false, handler: (req, res) => {
         auth.destroySession(auth.tokenFromRequest(req));
-        res.setHeader('Set-Cookie', auth.clearCookie());
+        // Drop the suite token as well, or this button is a no-op under SSO:
+        // the local session dies, the shared cookie survives, and the next
+        // request signs straight back in while the page redraws as logged in.
+        res.setHeader('Set-Cookie', [auth.clearCookie(), auth.clearSuiteCookie()]);
         ok(res);
     } },
 
@@ -461,7 +464,16 @@ const routes = [
     } },
 
     { method: 'POST', path: /^\/api\/settings\/password$/, handler: (req, res, p, body) => {
-        if (!auth.checkPassword(String(body.current || ''))) return json(res, 401, { error: 'Current password is wrong.' });
+        // Under SSO an app can be running with no local password at all, and the
+        // docs (and its own login page) tell the operator to set a fallback one
+        // from here. That was impossible: checkPassword is false whenever nothing
+        // is stored, so the form answered "Current password is wrong" about a
+        // password that never existed. With none to confirm, reaching this route
+        // already required a valid portal session - the same proof of authority
+        // the confirmation was standing in for.
+        if (auth.passwordIsSet() && !auth.checkPassword(String(body.current || ''))) {
+            return json(res, 401, { error: 'Current password is wrong.' });
+        }
         if (!body.next || String(body.next).length < 8) return bad(res, 'New password must be at least 8 characters.');
         auth.setPassword(String(body.next));
         // A password change should evict everything but the session doing

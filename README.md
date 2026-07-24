@@ -365,7 +365,7 @@ dead-man's switch: if AlertCanvas itself dies, Kuma notices that too.
 | `ALERTCANVAS_SECRET` | - | If set, the SMTP password and ntfy token are AES-256-GCM encrypted at rest |
 | `SUITE_SECRET` | - | Opt-in suite single sign-on: accept signed login tokens from the [LaunchCanvas](https://github.com/RootSwitch/LaunchCanvas) portal (same value across the suite; see its README for the security model) |
 | `COOKIE_SECURE` | auto | `Secure` cookies: on with HTTPS, off with HTTP; set to override |
-| `TRUST_PROXY` | - | `1` = honor `X-Forwarded-For` for the login limiter (behind a reverse proxy) |
+| `TRUST_PROXY` | - | `1` = honor `X-Forwarded-For` for the login limiter. Only set this when the app's own port is unreachable except through your proxy: the header is trusted on **every** connection, so a client that can reach the port directly can forge it and evade the limiter |
 | `TZ` | UTC | Timezone for log timestamps |
 
 Scan interval, thresholds, overrides, channels, and templates are set in

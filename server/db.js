@@ -11,7 +11,15 @@ const Database = require('better-sqlite3');
 const DATA_DIR = process.env.ALERTCANVAS_DATA || path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new Database(path.join(DATA_DIR, 'alertcanvas.db'));
+const DB_FILE = path.join(DATA_DIR, 'alertcanvas.db');
+const db = new Database(DB_FILE);
+// Owner-only. This file holds your alert history and notification settings, and it sits in a directory the suite
+// deliberately leaves world-readable (the kiosk's web tier runs as a different
+// uid and serves boards out of it), so the directory cannot protect it.
+// Narrowed here rather than with a process-wide umask, which would also
+// restrict the export files that web tier has to read. SQLite copies this mode
+// onto the -wal and -shm files it creates alongside.
+try { fs.chmodSync(DB_FILE, 0o600); } catch (_) { /* best effort - some mounts refuse chmod */ }
 db.pragma('journal_mode = WAL');
 db.pragma('synchronous = NORMAL');
 db.pragma('foreign_keys = ON');
@@ -137,6 +145,26 @@ CREATE TABLE IF NOT EXISTS uptime_seen (
         db.pragma('foreign_keys = ON');
     }
 }
+
+// --- overrides uniqueness. The table's UNIQUE (scope, code, host, kind) never
+// fires: a code-scope row leaves host NULL, a host-kind row leaves code NULL,
+// and SQLite counts NULLs as distinct - so every row is unique to it and the
+// 409 in api.js was dead code. Double-clicking Mute on the Watching page made
+// a second row per target, and Unmute (which finds one row per kind) deleted
+// only one of each pair, leaving the target muted while the button said Mute.
+// COALESCE the NULLs to '' in a unique index so the constraint is real.
+// Databases that already collected duplicates would refuse to build it, so
+// collapse each group to its lowest id first - the survivor is the row the
+// UI was already acting on.
+db.transaction(() => {
+    db.exec(`
+        DELETE FROM overrides WHERE id NOT IN (
+          SELECT MIN(id) FROM overrides
+           GROUP BY scope, kind, COALESCE(code, ''), COALESCE(host, ''));
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_overrides_target
+          ON overrides (scope, kind, COALESCE(code, ''), COALESCE(host, ''));
+    `);
+})();
 
 // --- settings ---
 const getSettingStmt = db.prepare('SELECT value FROM settings WHERE key = ?');

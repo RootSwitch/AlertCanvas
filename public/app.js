@@ -8,6 +8,10 @@
     const $logout = document.getElementById('logout-btn');
 
     let refreshTimer = null;
+    // Last mute/unmute failure, kept outside renderWatching because that click
+    // handler finishes by re-rendering - a message written into the old DOM
+    // would be thrown away before anyone could read it.
+    let muteError = null;
 
     // ===== helpers =====
     function esc(s) {
@@ -452,6 +456,7 @@
                 const code = btn.dataset.mute;
                 const unmute = btn.dataset.unmute === '1';
                 btn.disabled = true;
+                muteError = null;
                 try {
                     const { overrides } = await GET('/api/overrides');
                     for (const kind of btn.dataset.kinds.split(',')) {
@@ -472,10 +477,21 @@
                             else await api('PATCH', `/api/overrides/${row.id}`, { enabled: true });
                         }
                     }
-                } catch (e) { /* re-render below shows truth */ }
+                } catch (e) {
+                    // Some failures are permanent for a target - a kind the
+                    // server does not accept, a feed value with no code - so
+                    // swallowing them left a button that visibly did nothing,
+                    // forever. The message rides muteError through the
+                    // re-render and stays up until the next mute attempt.
+                    muteError = `${unmute ? 'Unmute' : 'Mute'} failed: ${e.message}`;
+                }
                 renderWatching();
             }));
         };
+        // Shown in both tables that carry mute buttons: the operator who
+        // clicked one at the bottom of a long interface list must not have to
+        // scroll back up to find out why nothing happened.
+        const muteMsg = () => (muteError ? `<div class="error-text">${esc(muteError)}</div>` : '');
 
         // Ping panel: the PingCanvas feed's roster with per-device opt-in.
         // Built once, shown whether or not the SNMP feed is up - a ping-only
@@ -571,10 +587,13 @@
                     : aspects.some((a) => a.current === 'ok') || i.down.current === 'ok' ? 'ok'
                     : null;
                 const allMuted = i.down.muted && aspects.every((a) => a.muted);
-                // Fully muted AND every mute comes from a host-kind override:
-                // there is nothing per-target for the button to undo.
+                // Fully muted with ANY of those mutes coming from a host-kind
+                // override: Unmute can only undo the code-scope half, so it
+                // would delete those rows, leave the row muted by the host
+                // rule, and flip the button back to Mute - a lie. A mixed
+                // mute belongs under Settings like a pure host one does.
                 const hostMuted = allMuted && [i.down, ...aspects]
-                    .filter((x) => x.muted).every((x) => x.source === 'host override');
+                    .some((x) => x.muted && x.source === 'host override');
                 return `
             <tr>
                 <td>${esc(i.host)}</td>
@@ -607,6 +626,7 @@
         </div>
         <div class="panel">
             <h2>Host metrics</h2>
+            ${muteMsg()}
             ${w.metrics.length === 0 ? '<div class="muted">The feed carries no metrics.</div>' : `
             <table class="list">
                 <thead><tr><th>Host</th><th>Value</th><th class="hide-sm">Kind</th><th>Effective rule</th><th>State</th><th></th></tr></thead>
@@ -616,6 +636,7 @@
         <div class="panel">
             <h2>Interfaces</h2>
             <div class="section-note">${devSummary}. Stale-feed watchdog raises after ${status.feed && status.feed.staleAfterS ? status.feed.staleAfterS + 's' : 'the configured window'} without a fresh feed. Warn / crit cells; hover for the current reading.</div>
+            ${muteMsg()}
             ${w.interfaces.length === 0 ? '<div class="muted">The feed carries no interfaces.</div>' : `
             <table class="list">
                 <thead><tr><th>Device</th><th>Interface</th><th>Link</th><th class="num">Errors</th><th class="num">Discards</th><th class="num">Util</th><th>State</th><th></th></tr></thead>

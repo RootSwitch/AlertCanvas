@@ -118,6 +118,16 @@ function sessionCookie(token) {
 function clearCookie() {
     return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
 }
+// Clearing the suite token too is what makes Log out mean something under SSO.
+// Dropping only the local session left the shared cookie alive, so the very
+// next request signed straight back in and the app reappeared - on a shared NOC
+// or kiosk browser the operator walked away believing they had logged out. The
+// cookie is host-wide (browsers scope by host, not port), so this app can clear
+// it for every sibling on the box. The portal keeps its own session; going back
+// there can mint a fresh token, and that is where a full sign-out belongs.
+function clearSuiteCookie() {
+    return `${SUITE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
+}
 function tokenFromRequest(req) {
     return parseCookies(req)[COOKIE_NAME] || null;
 }
@@ -199,7 +209,7 @@ function authenticate(req) {
 module.exports = {
     passwordIsSet, setPassword, checkPassword, seedFromEnv,
     createSession, validateSession, destroySession, destroyOtherSessions, pruneSessions,
-    sessionCookie, clearCookie, tokenFromRequest,
+    sessionCookie, clearCookie, clearSuiteCookie, tokenFromRequest,
     loginAllowed, recordLoginFailure, recordLoginSuccess,
     authenticate, ssoEnabled
 };
