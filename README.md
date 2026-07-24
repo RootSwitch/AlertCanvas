@@ -78,7 +78,7 @@ displaying; AlertCanvas only ever reads the file they share.
   `{{variable}}` substitution and a built-in reference table.
 - **Single shared password** for the UI (scrypt-hashed), sessions, login
   rate limiting, and one-click database backups from the Settings page.
-- **29 themes** carried over from CrossCanvas's palette family, grouped the
+- **30 themes** - Classic plus 29 shared with CrossCanvas's palette family, grouped the
   same way (Paper / Warm / Cool / Night / Screen).
 
 ## Small on purpose
@@ -92,6 +92,18 @@ few is a design choice - and if you want it to become something bigger, the
 license makes forking genuinely easy.
 
 ## Quick start (Docker)
+
+> **Installed via the [canvas-suite](https://github.com/RootSwitch/canvas-suite)
+> script?** Skip this section - your data lives under
+> `/srv/noc-data/alertcanvas`, the override (feed mount, ALERTCANVAS_SECRET,
+> SUITE_SECRET) is already written, and the app is running. Just set the
+> admin password on first visit.
+>
+> **Running the PingCanvas + AlertCanvas pair** (the `canvas-wall-setup.sh`
+> deployment, no SNMPCanvas)? That mode sets `STATUS_FILE=off` - the SNMP
+> feed and its watchdog are disabled on purpose, and alerting comes from
+> the ping opt-ins on the Watching page. The SNMP-first steps below do not
+> apply; see "Ping alerting" further down.
 
 ```yaml
 # docker-compose.yml (in the repo; abridged)
@@ -114,7 +126,7 @@ cat > docker-compose.override.yml <<'EOF'
 services:
   alertcanvas:
     volumes:
-      - /srv/snmpcanvas/data:/status:ro,z
+      - /srv/noc-data:/status:ro,z
 EOF
 docker compose up -d --build
 ```
@@ -166,7 +178,7 @@ it's gitignored so updates never conflict with your edits:
 services:
   alertcanvas:
     volumes:
-      - /srv/snmpcanvas/data:/status:ro,z
+      - /srv/noc-data:/status:ro,z
     environment:
       - TZ=America/Chicago
       #- ADMIN_PASSWORD=change-me
@@ -237,6 +249,11 @@ The rule is symmetric: set the status file path to `off` (or
 entirely, watchdog included. That makes a **PingCanvas + AlertCanvas pair**
 a first-class lightweight deployment - a ping wall that pages you, light
 enough for a Pi, with a plain JSON file as the only interconnect.
+
+Without SNMPCanvas on the box, mount the poller's output directory itself
+(e.g. `- /srv/noc-data:/status:ro,z` with
+`PING_STATUS_FILE=/status/status-all.json`) - the wall script writes
+exactly this wiring.
 
 ## Exporting is what arms alerting
 
@@ -337,7 +354,7 @@ dead-man's switch: if AlertCanvas itself dies, Kuma notices that too.
 |---|---|---|
 | `PORT` | `9162` | HTTP/HTTPS listen port |
 | `ALERTCANVAS_DATA` | `/data` | Directory for the SQLite db and certs |
-| `STATUS_FILE` | `/status/snmp-status.json` | Initial feed path (Settings can change it) |
+| `STATUS_FILE` | `/status/snmp-status.json` | Initial feed path (Settings can change it); `off` = no SNMP feed at all (ping-only pair mode, watchdog included) |
 | `TLS_CERT` / `TLS_KEY` | `$DATA/certs/server.crt|key` | PEM cert/key pair; HTTPS turns on when both exist |
 | `ADMIN_PASSWORD` | - | Pre-set the UI password (otherwise first-run setup page) |
 | `ALERTCANVAS_SECRET` | - | If set, the SMTP password and ntfy token are AES-256-GCM encrypted at rest |
@@ -431,7 +448,7 @@ fire is exactly the right report.
 
 For larger features - recipient routing, HTML mail, correlation,
 dashboards - I'd rather you fork than open a big PR. AlertCanvas is
-deliberately small, the whole backend is ten readable files, and The
+deliberately small, the whole backend is a handful of readable files, and The
 Unlicense means you owe nobody anything. Build the alerter you want.
 
 ## Credits
