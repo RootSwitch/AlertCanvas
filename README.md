@@ -97,8 +97,10 @@ license makes forking genuinely easy.
 > **Installed via the [canvas-suite](https://github.com/RootSwitch/canvas-suite)
 > script?** Skip this section - your data lives under
 > `/srv/noc-data/alertcanvas`, the override (feed mount, ALERTCANVAS_SECRET,
-> SUITE_SECRET) is already written, and the app is running. Just set the
-> admin password on first visit.
+> SUITE_SECRET) is already written, and the app is running. Sign in through LaunchCanvas
+> (the setup script prints its admin password once, and stores it in
+> `/projects/launchcanvas/docker-compose.override.yml`); this app has no
+> login of its own until you set an optional fallback password in Settings.
 >
 > **Running the PingCanvas + AlertCanvas pair** (the `canvas-wall-setup.sh`
 > deployment, no SNMPCanvas)? That mode sets `STATUS_FILE=off` - the SNMP
