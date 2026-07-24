@@ -197,7 +197,7 @@
             setTimeout(route, 5000); // self-heal once the server is back
             return;
         }
-        if (!session.authenticated) { renderLogin(session.needsSetup); return; }
+        if (!session.authenticated) { renderLogin(session.needsSetup, session.sso); return; }
 
         const hash = location.hash || '#/alarms';
         if (hash.startsWith('#/watching')) return renderWatching();
@@ -207,7 +207,13 @@
     }
 
     // ===== login / first-run =====
-    function renderLogin(needsSetup) {
+    function renderLogin(needsSetup, sso) {
+        // A fresh sub-app in an SSO suite must NOT offer its claim form to an
+        // anonymous visitor (an authenticated admin never reaches this page -
+        // their token logs them straight in). Point them at the portal instead;
+        // the backend refuses the claim regardless (defense in depth).
+        const locked = needsSetup && sso;
+        const portalUrl = location.protocol + '//' + location.hostname + ':9160/';
         setNav(null, false);
         setAutoRefresh(null);
         $main.innerHTML = `
@@ -218,15 +224,22 @@
                 <rect x="9" y="12" width="46" height="34" rx="3" fill="#f4f1ea" stroke-width="4"/>
                 <g fill="var(--se-down)" stroke="none"><rect x="28.5" y="17" width="7" height="16.5" rx="3.5"/><circle cx="32" cy="40.5" r="3.6"/></g>
             </svg> AlertCanvas</h1>
+            ${locked ? `
+            <div class="sub">This instance is part of a single sign-on suite.</div>
+            <p class="muted" style="text-align:center;line-height:1.5;margin-top:4px">
+                Sign in through <a href="${portalUrl}">LaunchCanvas</a> and open this app
+                from there. It has no login of its own until an administrator sets a
+                fallback password from Settings.</p>` : `
             <div class="sub">${needsSetup ? 'First run - choose an admin password (8+ characters).' : 'Enter the password to continue.'}</div>
             <form id="login-form">
                 <input type="password" id="pw" placeholder="Password" autofocus autocomplete="${needsSetup ? 'new-password' : 'current-password'}">
                 ${needsSetup ? '<input type="password" id="pw2" placeholder="Confirm password" autocomplete="new-password">' : ''}
                 <button class="btn-primary" type="submit">${needsSetup ? 'Set password' : 'Log in'}</button>
                 <div class="error-text" id="login-err" style="margin-top:8px"></div>
-            </form>
+            </form>`}
         </div></div>`;
-        document.getElementById('login-form').addEventListener('submit', async (ev) => {
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) loginForm.addEventListener('submit', async (ev) => {
             ev.preventDefault();
             const pw = document.getElementById('pw').value;
             const err = document.getElementById('login-err');

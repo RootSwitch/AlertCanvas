@@ -181,6 +181,11 @@ function verifySuiteToken(req) {
     }
 }
 
+// Is this instance part of an SSO suite? (SUITE_SECRET configured means a
+// LaunchCanvas token is honored - and that first-run setup must not be
+// claimable anonymously; see the setup route.)
+function ssoEnabled() { return !!process.env.SUITE_SECRET; }
+
 // A request is authenticated by EITHER a local password session OR - when
 // SUITE_SECRET is set - a valid LaunchCanvas suite token. The token is
 // re-verified every request rather than converted into a persistent local
@@ -196,5 +201,5 @@ module.exports = {
     createSession, validateSession, destroySession, destroyOtherSessions, pruneSessions,
     sessionCookie, clearCookie, tokenFromRequest,
     loginAllowed, recordLoginFailure, recordLoginSuccess,
-    authenticate
+    authenticate, ssoEnabled
 };

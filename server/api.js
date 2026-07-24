@@ -174,11 +174,18 @@ const routes = [
 
     { method: 'GET', path: /^\/api\/session$/, authRequired: false, handler: (req, res) => {
         const authed = auth.authenticate(req);
-        ok(res, { authenticated: authed, needsSetup: !auth.passwordIsSet() });
+        ok(res, { authenticated: authed, needsSetup: !auth.passwordIsSet(), sso: auth.ssoEnabled() });
     } },
 
     { method: 'POST', path: /^\/api\/setup$/, authRequired: false, handler: (req, res, p, body) => {
         if (auth.passwordIsSet()) return json(res, 409, { error: 'already configured' });
+        // In an SSO suite a fresh sub-app is protected by the LaunchCanvas
+        // token, not by a race to this setup page: an anonymous LAN visitor
+        // (mistyped port, inherited bookmark) must not be able to claim the
+        // admin account. A portal-authenticated user still may, to set a local
+        // fallback password.
+        if (auth.ssoEnabled() && !auth.authenticate(req))
+            return json(res, 403, { error: 'This app is part of a single sign-on suite - sign in through LaunchCanvas first.' });
         if (!body.password || String(body.password).length < 8) return bad(res, 'Password must be at least 8 characters.');
         auth.setPassword(String(body.password));
         const token = auth.createSession();
