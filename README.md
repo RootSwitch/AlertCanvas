@@ -378,7 +378,10 @@ AlertCanvas is a networked app with a small, deliberate threat model:
 - The web UI has one shared password and is designed for a trusted network
   segment; a reverse proxy adds TLS termination and extra auth cleanly if
   you want to go further. The first-run setup page belongs to whoever
-  reaches it first - claim it promptly or pre-set `ADMIN_PASSWORD`.
+  reaches it first - claim it promptly or pre-set `ADMIN_PASSWORD`. (In an
+  SSO suite this is closed automatically: with `SUITE_SECRET` set, the
+  setup page can only be completed by someone already signed in through
+  LaunchCanvas, so a stray direct visitor can't claim the account.)
   Changing the password evicts every other session.
 - With `SUITE_SECRET` set, a signed token minted by the
   [LaunchCanvas](https://github.com/RootSwitch/LaunchCanvas) portal also
