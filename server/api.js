@@ -154,6 +154,17 @@ const SCAN_KEYS = new Set(['status_file', 'scan_interval_s']);
 
 // --- route table ---
 // handler(req, res, params, body, query). `authRequired: false` routes are public.
+// A stored secret only ever goes to the destination it was stored for. Omitting
+// `pass`/`token` on a test means "use the saved one" - correct when testing the
+// saved relay (the Settings form leaves the field blank to mean exactly that),
+// but a test pointed at a DIFFERENT server would otherwise hand the saved secret
+// to whatever answers there, turning any authenticated user into a reader of
+// credentials the API never returns and the database encrypts at rest.
+function sameDest(given, storedKey) {
+    const stored = String(getSetting(storedKey) || '').trim();
+    return given === undefined ? true : String(given || '').trim() === stored;
+}
+
 const routes = [
     // Plain: liveness for the container HEALTHCHECK. With ?alarms=1 it also
     // goes 503 while any crit alarm is raised, so an external monitor (e.g.
@@ -522,6 +533,12 @@ const routes = [
     } },
 
     { method: 'POST', path: /^\/api\/test\/email$/, handler: async (req, res, p, body) => {
+        // Only refuse when we would actually transmit the stored password: a
+        // blank username means no AUTH is attempted, so nothing can leak.
+        const willAuth = String((body.user === undefined ? getSetting('smtp_user') : body.user) || '').trim() !== '';
+        if (willAuth && body.pass === undefined && !sameDest(body.host, 'smtp_host')) {
+            return bad(res, 'This test points at a different SMTP server than the saved one - enter that server\'s password before testing.');
+        }
         const r = await smtp.sendMail(
             '[AlertCanvas] test message',
             'This is a test from AlertCanvas. If you can read this, SMTP settings work.\n\n-- AlertCanvas',
@@ -534,9 +551,14 @@ const routes = [
     } },
 
     { method: 'POST', path: /^\/api\/test\/ntfy$/, handler: async (req, res, p, body) => {
+        // Blank token means "reuse the saved one" for the SAVED server, but
+        // "send none" for a different one - so a new destination never receives
+        // the stored token, and a token-less server is still testable.
+        const tokenOverride = body.token !== undefined && body.token !== '' ? { token: body.token }
+            : (sameDest(body.server, 'ntfy_server') ? {} : { token: '' });
         const r = await ntfy.send('test', { severity: 'warn', kind: 'test', host: null, code: null },
             'AlertCanvas test', 'AlertCanvas ntfy test message',
-            { server: body.server, topic: body.topic, ...(body.token !== undefined && body.token !== '' ? { token: body.token } : {}) });
+            { server: body.server, topic: body.topic, ...tokenOverride });
         notify.record(null, 'ntfy', 'test', r.ok, r.detail);
         ok(res, r);
     } },
