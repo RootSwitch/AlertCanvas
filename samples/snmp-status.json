@@ -1,8 +1,45 @@
 {
- "schemaVersion": 2,
+ "schemaVersion": 3,
  "generator": "snmpcanvas/1.0.0",
  "generatedAt": "2026-07-21T00:00:00.000Z",
  "pollIntervalSec": 3600,
+ "devices": [
+  {
+   "name": "core-sw1",
+   "host": "10.0.0.2",
+   "status": "up"
+  },
+  {
+   "name": "fw-1",
+   "host": "10.0.0.1",
+   "status": "up"
+  },
+  {
+   "name": "esxi-01",
+   "host": "10.0.0.5",
+   "status": "up"
+  },
+  {
+   "name": "compute-01",
+   "host": null,
+   "status": "up"
+  },
+  {
+   "name": "nas-01",
+   "host": null,
+   "status": "up"
+  },
+  {
+   "name": "ups-host",
+   "host": null,
+   "status": "up"
+  },
+  {
+   "name": "gpu-node",
+   "host": null,
+   "status": "up"
+  }
+ ],
  "interfaces": [
   {
    "id": "core-sw1:eth0",

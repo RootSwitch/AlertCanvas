@@ -14,7 +14,8 @@ const scanner = require('./scanner');
 
 // Default port 9162 ("162" for SNMP traps - fitting for the suite's alerting
 // app) - deliberately clear of the usual home-lab suspects: UptimeKuma 3001,
-// CrossCanvas/PingCanvas 8080/8443, SNMPCanvas 9161, SyslogCanvas 9514.
+// PingCanvas 8080/8443 (also serves the CrossCanvas editor), SNMPCanvas
+// 9161, SyslogCanvas 9514, LaunchCanvas 9160.
 const PORT = parseInt(process.env.PORT || '9162', 10);
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 

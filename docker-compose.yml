@@ -17,7 +17,8 @@ services:
     hostname: alertcanvas
     # Default port 9162 ("162" for SNMP traps - fitting for the suite's
     # alerting app). Stays clear of UptimeKuma (3001), CrossCanvas/PingCanvas
-    # (8080/8443), SNMPCanvas (9161) and SyslogCanvas (9514) on a shared host.
+    # (8080/8443, also serves the CrossCanvas editor), SNMPCanvas (9161),
+    # SyslogCanvas (9514), and LaunchCanvas (9160) on a shared host.
     ports:
       - "9162:9162"
     volumes:

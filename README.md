@@ -8,8 +8,9 @@
 AlertCanvas alerts only on values you have explicitly chosen to export from
 SNMPCanvas. That keeps it tiny: no per-vendor MIB knowledge, no discovery,
 no agents - just the numbers you already decided matter, a threshold for
-each kind, and a notification when one crosses. It is part of the Canvas
-family: [**CrossCanvas**](https://github.com/RootSwitch/CrossCanvas) draws
+each kind, and a notification when one crosses.
+
+It is part of the Canvas family: [**CrossCanvas**](https://github.com/RootSwitch/CrossCanvas) draws
 your network, [**PingCanvas**](https://github.com/RootSwitch/PingCanvas)
 turns those diagrams into a live reachability wall,
 [**SNMPCanvas**](https://github.com/RootSwitch/SNMPCanvas) gathers the
@@ -104,6 +105,10 @@ license makes forking genuinely easy.
 > feed and its watchdog are disabled on purpose, and alerting comes from
 > the ping opt-ins on the Watching page. The SNMP-first steps below do not
 > apply; see "Ping alerting" further down.
+> **On Windows?** Skip the `chown` steps (Docker Desktop handles ownership);
+> set env vars PowerShell-style (`$env:NAME = 'value'; npm start`); and
+> `tools/gen-cert.sh` needs Git Bash or WSL - or drop your own PEM pair at
+> the cert paths.
 
 ```yaml
 # docker-compose.yml (in the repo; abridged)
@@ -134,9 +139,9 @@ docker compose up -d --build
 Open `http://your-host:9162`, set the admin password on the first-run page,
 and check the Alarms page. That's the whole install. (The default port is a
 nod to SNMP's trap port UDP/162 - the notification side of SNMP - picked to
-coexist quietly with common home-lab neighbors like Uptime Kuma on 3001,
-CrossCanvas/PingCanvas on 8080/8443, SNMPCanvas on 9161, and SyslogCanvas
-on 9514.)
+coexist quietly with common home-lab neighbors like Uptime Kuma on 3001
+and the rest of the suite:
+PingCanvas (which also serves the CrossCanvas editor) on 8080/8443, SNMPCanvas on 9161, SyslogCanvas on 9514 web + 514/162 udp, LaunchCanvas on 9160.)
 
 Two first-run notes: the setup page belongs to whoever reaches the port
 first, so on anything but a trusted segment either set `ADMIN_PASSWORD` in
@@ -407,7 +412,9 @@ node tools/refresh-status.js              # samples/ feed -> data/live.json, fre
 STATUS_FILE=./data/live.json npm start    # UI on http://localhost:9162
 ```
 
-(Windows PowerShell: `$env:STATUS_FILE = '.\data\live.json'; npm start`.)
+(Windows PowerShell: `$env:STATUS_FILE = '.\data\live.json'; npm start`.
+For ping alerting, add `PING_STATUS_FILE=./data/status-all.json` and seed it
+with `node tools/refresh-status.js --ping`.)
 
 `tools/refresh-status.js` fakes a live feed - re-stamp timestamps, force
 values, drop links, take devices down - so you can watch alarms raise and
@@ -415,6 +422,8 @@ clear without owning a misbehaving UPS:
 
 ```
 node tools/refresh-status.js --set K7Q2=60 --ifdown P9WT --devdown fw-1
+node tools/refresh-status.js --ping --pingdown 8.8.8.8   # fake the PingCanvas feed too
+
 node tools/refresh-status.js --stale      # let the watchdog catch it
 ```
 

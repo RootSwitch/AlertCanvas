@@ -1,0 +1,11 @@
+{
+ "generated": "2026-07-21T00:00:00Z",
+ "pollIntervalSec": 30,
+ "devices": {
+  "8.8.8.8": { "state": "up", "latencyMs": 12, "since": "2026-07-20T00:00:00Z", "name": "Internet" },
+  "203.0.113.1": { "state": "up", "latencyMs": 9, "since": "2026-07-20T00:00:00Z", "name": "ISP-1 gateway" },
+  "198.51.100.1": { "state": "degraded", "latencyMs": 187, "since": "2026-07-20T22:10:00Z", "name": "ISP-2 gateway" },
+  "192.168.1.10": { "state": "down", "latencyMs": null, "since": "2026-07-20T23:55:00Z", "name": "DNS-3" },
+  "192.168.1.31": { "state": "up", "latencyMs": 1, "since": "2026-07-20T00:00:00Z" }
+ }
+}

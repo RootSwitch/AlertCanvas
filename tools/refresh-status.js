@@ -12,7 +12,12 @@
 //   node tools/refresh-status.js --drop K7Q2                    # remove that code from the feed
 //   node tools/refresh-status.js --stale                        # keep the old generatedAt
 //
-// Flags combine; --set/--ifdown/--devdown/--drop repeat.
+// Ping feed (samples/status-all.json -> ./data/status-all.json):
+//   node tools/refresh-status.js --ping                          # fresh copy of the ping feed
+//   node tools/refresh-status.js --ping --pingdown 8.8.8.8       # that key goes down
+//   node tools/refresh-status.js --ping --pingup 192.168.1.10    # that key recovers
+//
+// Flags combine; --set/--ifdown/--devdown/--drop/--pingdown/--pingup repeat.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,16 +31,32 @@ function opts(name) {
 const opt = (name, dflt) => opts(name)[0] ?? dflt;
 const has = (name) => args.includes('--' + name);
 
-const inFile = opt('in', path.join(__dirname, '..', 'samples', 'snmp-status.json'));
-const outFile = opt('out', path.join(__dirname, '..', 'data', 'live.json'));
+// --ping switches the tool to the PingCanvas feed (its own default paths).
+const PING = has('ping');
+const inFile = opt('in', path.join(__dirname, '..', 'samples', PING ? 'status-all.json' : 'snmp-status.json'));
+const outFile = opt('out', path.join(__dirname, '..', 'data', PING ? 'status-all.json' : 'live.json'));
 
 const doc = JSON.parse(fs.readFileSync(inFile, 'utf8'));
 const nowIso = new Date().toISOString();
 
 if (!has('stale')) {
-    doc.generatedAt = nowIso;
+    if (PING) doc.generated = nowIso;
+    else doc.generatedAt = nowIso;
     for (const i of doc.interfaces || []) i.sampledAt = nowIso;
     for (const m of doc.metrics || []) m.sampledAt = nowIso;
+}
+
+for (const key of opts('pingdown')) {
+    const d = (doc.devices || {})[key];
+    if (!d) { console.error(`--pingdown: no ping device with key ${key}`); process.exit(1); }
+    d.state = 'down'; d.latencyMs = null; d.since = nowIso;
+    console.log(`ping ${key}${d.name ? ' (' + d.name + ')' : ''} -> down`);
+}
+for (const key of opts('pingup')) {
+    const d = (doc.devices || {})[key];
+    if (!d) { console.error(`--pingup: no ping device with key ${key}`); process.exit(1); }
+    d.state = 'up'; d.latencyMs = 5; d.since = nowIso;
+    console.log(`ping ${key}${d.name ? ' (' + d.name + ')' : ''} -> up`);
 }
 
 for (const kv of opts('set')) {
