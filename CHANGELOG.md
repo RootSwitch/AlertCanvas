@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Two more tests in `npm test`.** `tools/test-ping-alerts.js` drives the real
+  scanner and database through both deployments: paired (a watched address
+  raises and clears; an unwatched one stays silent however loudly it is down)
+  and ping-only with `STATUS_FILE=off` (the SNMP watchdog must never fire -
+  "no SNMP configured" is not "SNMP is broken", and an alerting tool that cries
+  wolf about a deployment it was told about is worse than one that says
+  nothing). `tools/test-conditions.js` covers the poll-loop watchdog, in
+  particular a feed from an SNMPCanvas too old to publish poller health: absence
+  must read as "cannot say", never as "behind", and the healthy case must keep
+  pushing a condition so an alarm raised earlier can still clear.
+
 - **Alerts when SNMPCanvas cannot keep up.** SNMPCanvas now publishes a
   `poller` block saying whether its poll loop is behind; AlertCanvas raises a
   **warning** on it by default. Deliberately warn rather than crit - nothing is
