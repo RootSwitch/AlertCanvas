@@ -167,7 +167,14 @@ async function tick() {
         // so "all quiet" is distinguishable from "not looking".
         if (feed.ok) {
             const devices = new Set();
-            for (const i of feed.doc.interfaces || []) devices.add((i.device && i.device.name) || String(i.id || '').split(':')[0]);
+            // snmp-status.json v4 sends `device` as the device NAME and dropped
+            // `id`; v3 sent a {name,host,status} object plus an id. Accept both
+            // - the suite's apps are upgraded independently, so AlertCanvas can
+            // meet either version of SNMPCanvas.
+            for (const i of feed.doc.interfaces || []) {
+                devices.add(typeof i.device === 'string' ? i.device
+                    : (i.device && i.device.name) || String(i.id || '').split(':')[0]);
+            }
             for (const m of feed.doc.metrics || []) devices.add(m.host);
             lastScan.watching = {
                 metrics: (feed.doc.metrics || []).length,

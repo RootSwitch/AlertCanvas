@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Reads `snmp-status.json` schema **v4** as well as v3. v4 sends `device` as
+  the device NAME rather than a `{name, host, status}` object and drops `id`,
+  roughly halving the file. Only the "devices seen" heartbeat count touched
+  those fields - alert conditions key off `code` and were unaffected - but that
+  count would have silently gone wrong on a v4 feed. Both shapes are accepted
+  deliberately: suite apps are updated independently, so SNMPCanvas moving to
+  v4 before AlertCanvas is updated must not distort what the UI reports it is
+  watching.
+
 ## 0.4.2 - 2026-07-22
 
 - Review fixes for ping alerting, found by an adversarial pass before
