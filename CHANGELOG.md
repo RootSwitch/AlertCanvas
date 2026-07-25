@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Alerts when SNMPCanvas cannot keep up.** SNMPCanvas now publishes a
+  `poller` block saying whether its poll loop is behind; AlertCanvas raises a
+  **warning** on it by default. Deliberately warn rather than crit - nothing is
+  down, history is just being recorded at a longer interval than configured -
+  but it alerts out of the box because the whole failure mode is that nothing
+  looks wrong. The condition is pushed on every readable scan with a null
+  severity when healthy, or when the field is absent on an older SNMPCanvas, so
+  "cannot say" never reads as "behind" and a raised alarm still clears.
 - Reads `snmp-status.json` schema **v4** as well as v3. v4 sends `device` as
   the device NAME rather than a `{name, host, status}` object and drops `id`,
   roughly halving the file. Only the "devices seen" heartbeat count touched

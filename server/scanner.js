@@ -195,6 +195,33 @@ async function tick() {
             value: null, threshold: null, unit: ''
         });
 
+        // SNMPCanvas reporting that its own poll loop cannot keep up. Not a
+        // device fault: everything is reachable, history is simply being
+        // recorded at a longer interval than the one configured. It WARNS
+        // rather than crits for that reason - but it does alert by default,
+        // because the whole failure mode is that nothing looks wrong. Graphs
+        // keep drawing, just coarser, and nobody running a two-person IT shop
+        // finds that by reading a Settings page.
+        //
+        // Pushed whenever the feed is readable, with severity null when healthy
+        // OR when the field is absent (an SNMPCanvas too old to report it). So
+        // an alarm raised earlier still CLEARS through the normal machinery
+        // rather than stranding, and "cannot say" never reads as "behind".
+        const ph = feed.ok && feed.doc ? feed.doc.poller : null;
+        const loopBehind = !!(ph && ph.behind === true);
+        if (feed.ok) {
+            conditions.push({
+                key: 'watchdog:pollloop', severity: loopBehind ? 'warn' : null, frozen: false,
+                kind: 'watchdog', host: null, code: null,
+                label: loopBehind
+                    ? `SNMPCanvas poll loop behind - ${ph.overdueDevices} device(s) overdue, worst ${ph.worstLateS}s late `
+                      + `(POLL_CONCURRENCY is ${ph.concurrency}; raising it is usually the fix)`
+                    : 'SNMPCanvas poll loop',
+                value: ph && ph.overdueDevices != null ? ph.overdueDevices : null,
+                threshold: null, unit: ''
+            });
+        }
+
         // --- the ping feed (PingCanvas) --------------------------------------
         // Always read it (the Watching page's opt-in list needs the roster
         // even before anything is watched), but only EVALUATE and only run
