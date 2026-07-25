@@ -27,7 +27,7 @@ The family's small-footprint ethos carries over: one container, one SQLite
 file, two runtime dependencies, and a frontend that is plain HTML/CSS/JS
 with no build step.
 
-![Four AlertCanvas themes, four views - Alarms, Watching, History, and Settings - shown in the Slate, Parchment, Nocturne, and Sage themes](docs/hero-quadrants.png)
+![Four AlertCanvas themes, four views during one power cut - Alarms with eight firing and one already acknowledged, Watching showing the UPS on battery and the core switch at 67C, History of older cleared incidents, and threshold Settings - shown in the Slate, Parchment, Nocturne, and Sage themes](docs/hero-quadrants.png)
 
 ## How it works
 
