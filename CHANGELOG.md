@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Passwords hash and verify off the event loop.** `crypto.scryptSync` in
+  `server/auth.js` serialised concurrent logins into one unbroken stall (8 at
+  once measured ~218ms in which no scan ran and no notification dispatched),
+  while each single call sat under per-call blocking thresholds - the burst is
+  the cost, so a blocking sweep cannot see it. Now the async `crypto.scrypt`,
+  awaited in the setup, login and password-change handlers; the server waits
+  for the `ADMIN_PASSWORD` seed before listening. The stored hash format is
+  unchanged - `tools/test-auth.js` (new, in `npm test`) proves a hash minted
+  by the old synchronous code still verifies.
+
+- **`tools/charcheck.js` now checks itself.** The checker banned em/en dashes
+  and curly quotes while containing all six as literals - and never flagged
+  itself, because its binary guard was a literal NUL byte embedded in the
+  source, which made charcheck.js the one tracked file matching its own
+  binary test. The banned set is now built from code points, the NUL is
+  constructed with `String.fromCharCode(0)`, and files skipped as binary are
+  logged by name instead of passed over silently - that silence is what hid
+  the bug.
+
 - **Two more tests in `npm test`.** `tools/test-ping-alerts.js` drives the real
   scanner and database through both deployments: paired (a watched address
   raises and clears; an unwatched one stays silent however loudly it is down)
