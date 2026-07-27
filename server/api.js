@@ -188,7 +188,7 @@ const routes = [
         ok(res, { authenticated: authed, needsSetup: !auth.passwordIsSet(), sso: auth.ssoEnabled() });
     } },
 
-    { method: 'POST', path: /^\/api\/setup$/, authRequired: false, handler: (req, res, p, body) => {
+    { method: 'POST', path: /^\/api\/setup$/, authRequired: false, handler: async (req, res, p, body) => {
         if (auth.passwordIsSet()) return json(res, 409, { error: 'already configured' });
         // In an SSO suite a fresh sub-app is protected by the LaunchCanvas
         // token, not by a race to this setup page: an anonymous LAN visitor
@@ -198,16 +198,16 @@ const routes = [
         if (auth.ssoEnabled() && !auth.authenticate(req))
             return json(res, 403, { error: 'This app is part of a single sign-on suite - sign in through LaunchCanvas first. (No portal on this box? Set ADMIN_PASSWORD in the compose file for this app and restart, or remove SUITE_SECRET to restore the normal first-run setup.)' });
         if (!body.password || String(body.password).length < 8) return bad(res, 'Password must be at least 8 characters.');
-        auth.setPassword(String(body.password));
+        await auth.setPassword(String(body.password));
         const token = auth.createSession();
         res.setHeader('Set-Cookie', auth.sessionCookie(token));
         ok(res);
     } },
 
-    { method: 'POST', path: /^\/api\/login$/, authRequired: false, handler: (req, res, p, body) => {
+    { method: 'POST', path: /^\/api\/login$/, authRequired: false, handler: async (req, res, p, body) => {
         const ip = clientIp(req);
         if (!auth.loginAllowed(ip)) return json(res, 429, { error: 'Too many attempts - wait a minute.' });
-        if (!auth.checkPassword(String(body.password || ''))) {
+        if (!await auth.checkPassword(String(body.password || ''))) {
             auth.recordLoginFailure(ip);
             return json(res, 401, { error: 'Wrong password.' });
         }
@@ -463,7 +463,7 @@ const routes = [
         ok(res);
     } },
 
-    { method: 'POST', path: /^\/api\/settings\/password$/, handler: (req, res, p, body) => {
+    { method: 'POST', path: /^\/api\/settings\/password$/, handler: async (req, res, p, body) => {
         // Under SSO an app can be running with no local password at all, and the
         // docs (and its own login page) tell the operator to set a fallback one
         // from here. That was impossible: checkPassword is false whenever nothing
@@ -471,11 +471,11 @@ const routes = [
         // password that never existed. With none to confirm, reaching this route
         // already required a valid portal session - the same proof of authority
         // the confirmation was standing in for.
-        if (auth.passwordIsSet() && !auth.checkPassword(String(body.current || ''))) {
+        if (auth.passwordIsSet() && !await auth.checkPassword(String(body.current || ''))) {
             return json(res, 401, { error: 'Current password is wrong.' });
         }
         if (!body.next || String(body.next).length < 8) return bad(res, 'New password must be at least 8 characters.');
-        auth.setPassword(String(body.next));
+        await auth.setPassword(String(body.next));
         // A password change should evict everything but the session doing
         // the changing - otherwise a stolen cookie survives the rotation.
         auth.destroyOtherSessions(auth.tokenFromRequest(req));

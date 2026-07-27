@@ -15,13 +15,22 @@ const SESSION_REFRESH_S = 15 * 24 * 3600;   // refresh when less than this remai
 // they all used a generic name.
 const COOKIE_NAME = 'alertc_session';
 
-function hashPassword(password) {
+// Async scrypt: the synchronous form serialises concurrent logins into one
+// event-loop stall (8 at once measured ~218ms in which no scan runs and no
+// notification dispatches), and each call sits under per-call blocking
+// thresholds, so the burst is the cost. The callback form runs on the
+// threadpool instead.
+const scryptAsync = (password, salt, keylen, opts) => new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, keylen, opts, (err, key) => (err ? reject(err) : resolve(key)));
+});
+
+async function hashPassword(password) {
     const salt = crypto.randomBytes(16);
-    const hash = crypto.scryptSync(password, salt, 32, SCRYPT);
+    const hash = await scryptAsync(password, salt, 32, SCRYPT);
     return `scrypt$N=${SCRYPT.N},r=${SCRYPT.r},p=${SCRYPT.p}$${salt.toString('base64')}$${hash.toString('base64')}`;
 }
 
-function verifyPassword(password, stored) {
+async function verifyPassword(password, stored) {
     try {
         const [scheme, params, saltB64, hashB64] = stored.split('$');
         if (scheme !== 'scrypt') return false;
@@ -31,7 +40,7 @@ function verifyPassword(password, stored) {
             opts[k === 'N' ? 'N' : k] = parseInt(v, 10);
         }
         const expected = Buffer.from(hashB64, 'base64');
-        const actual = crypto.scryptSync(password, Buffer.from(saltB64, 'base64'), expected.length, opts);
+        const actual = await scryptAsync(password, Buffer.from(saltB64, 'base64'), expected.length, opts);
         return crypto.timingSafeEqual(actual, expected);
     } catch (_) {
         return false;
@@ -39,14 +48,17 @@ function verifyPassword(password, stored) {
 }
 
 function passwordIsSet() { return getSetting('password') !== null; }
-function setPassword(password) { setSetting('password', hashPassword(password)); }
-function checkPassword(password) {
+async function setPassword(password) { setSetting('password', await hashPassword(password)); }
+async function checkPassword(password) {
     const stored = getSetting('password');
-    return stored !== null && verifyPassword(password, stored);
+    if (stored === null) return false;
+    return verifyPassword(password, stored);
 }
 
 // Seed from env on first boot so a compose file can pre-set the password.
-function seedFromEnv() {
+// Async (it hashes): server.js awaits it before listening, so a request can
+// never observe the unclaimed-setup state that the seed exists to prevent.
+async function seedFromEnv() {
     if (!passwordIsSet() && process.env.ADMIN_PASSWORD) {
         // Seed even a short one (an unclaimed setup page is worse), but say so:
         // the web UI enforces 8+ chars and would reject this same password.
@@ -54,7 +66,7 @@ function seedFromEnv() {
             console.warn(new Date().toISOString(),
                 '[auth] ADMIN_PASSWORD is shorter than the 8-character minimum the UI enforces - consider a longer one');
         }
-        setPassword(process.env.ADMIN_PASSWORD);
+        await setPassword(process.env.ADMIN_PASSWORD);
     }
 }
 
