@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- **Bring your own theme, without a rebuild.** A `theme.json` in the data
+  directory adds a thirtieth entry to the picker, above the twenty-nine shipped
+  ones. It is the same fifteen `--se-*` variables, hex only, and partial files
+  are fine - anything you leave out inherits Classic, so changing two colours
+  takes a two-line file. Because the data directory is a bind mount, editing it
+  is a browser refresh rather than a `docker compose up --build`; delete the
+  file and the entry goes away. Point several apps at one shared data directory
+  and a single file themes all of them.
+
+  The shipped themes were deliberately left alone. They are duplicated across
+  six repos, the style guide and the demo, so every addition is drift - which is
+  exactly why a user's palette should not join that set. `tools/export-theme.js`
+  prints any shipped theme as a starting file so nobody has to learn the format
+  from documentation.
+
+  `tools/check-theme.js` validates a file before you restart anything, and calls
+  the same loader the server calls so it cannot accept what the app would reject.
+  It also audits readability, because fifteen variables include `--se-up`,
+  `--se-down` and `--se-warn`: on a wall display a palette where healthy and
+  failed do not separate at a glance is a different kind of problem from one
+  that is merely ugly. Text contrast is checked against WCAG AA; state colours
+  are checked for hue separation and for being so washed out they read as "no
+  data" rather than a state. It reports and never refuses - several shipped
+  themes would warn, having been built for the CrossCanvas editor before
+  monitoring was layered on.
+
+  The endpoint serving it is deliberately public. The login page is themed too,
+  and gating this would leave the first page every user sees stuck on Classic
+  while their palette waited behind a session. It carries fifteen colours and a
+  label, and the loader rebuilds the object from validated values rather than
+  passing the file through, so nothing else in it can reach a browser.
+
+  The saturation check exists because a test found the hue check insufficient:
+  `#8a8f98` is the shipped grey, but it is really a blue-grey sitting 76 degrees
+  off green, so hue passed it while it still read as no-state on a board. The
+  test was written expecting hue to cover that case and did not pass.
+
 - **The container healthcheck no longer leaks zombies onto the host.** The
   image runs `node` as PID 1, and Node does not reap processes it did not
   spawn - so the HEALTHCHECK's `wget` left an `ssl_client` behind on every

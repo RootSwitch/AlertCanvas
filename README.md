@@ -203,6 +203,52 @@ The data directory is a bind mount, so alarms, history, and settings ride
 through every update (schema migrations run automatically on first boot).
 An occasional `sudo docker image prune -f` tidies old layers.
 
+### Your own theme
+
+Twenty-nine themes ship in the picker. If none of them is your organisation's
+colours, add a thirtieth without touching the app: drop a `theme.json` in the
+data directory and it appears at the top of the list.
+
+Start from whichever shipped theme is closest, rather than from a blank file:
+
+```
+node tools/export-theme.js nocturne > data/theme.json
+node tools/check-theme.js
+```
+
+Then edit the hex values. It is a flat object of the same fifteen `--se-*`
+variables the built-in themes use, and **you only need the ones you want to
+change** - anything you leave out inherits Classic, so a three-line file is
+valid:
+
+```json
+{
+  "label": "Acme",
+  "vars": { "--se-panel": "#101820", "--se-accent": "#e8734a" }
+}
+```
+
+Because `data/` is a bind mount, **no rebuild is involved**. Edit the file,
+refresh the browser, and it is there. Delete the file and the entry disappears.
+Values must be hex; anything else is refused and logged rather than applied.
+
+Running the whole suite? Point every app's data mount at one shared directory
+(`canvas-suite-setup.sh` already does) and a single `theme.json` themes all of
+them at once.
+
+**`tools/check-theme.js` also audits readability**, because fifteen variables
+include `--se-up`, `--se-down` and `--se-warn`, and this is a wall display: a
+palette where healthy and failed do not separate at a glance is a different
+kind of problem from one that is merely ugly. It checks text contrast against
+WCAG AA and flags state colours that are too close in hue or too washed out to
+read as a state at all.
+
+It reports; it never refuses. Some of the shipped themes would warn too - they
+were designed for the CrossCanvas editor first, with monitoring layered on
+later, and a few exist mostly because they are fun. Amber in particular puts
+`up` and `down` only 36 degrees apart, which is the point of a monochrome CRT
+look and is worth knowing before you put it on a wall.
+
 ### Running without Docker
 
 Node 20+: `npm install && npm start` (listens on `:9162`, data in `./data`,

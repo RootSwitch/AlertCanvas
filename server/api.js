@@ -14,6 +14,7 @@ const smtp = require('./smtp');
 const syslogOut = require('./syslog-out');
 const ntfy = require('./ntfy');
 const rules = require('./rules');
+const themeFile = require('./theme');
 
 // --- tiny helpers ---
 function json(res, status, body) {
@@ -186,6 +187,24 @@ const routes = [
     { method: 'GET', path: /^\/api\/session$/, authRequired: false, handler: (req, res) => {
         const authed = auth.authenticate(req);
         ok(res, { authenticated: authed, needsSetup: !auth.passwordIsSet(), sso: auth.ssoEnabled() });
+    } },
+
+    // The operator's own palette from <data>/theme.json, if they wrote one.
+    // PUBLIC on purpose: the login page is themed too, and gating this would
+    // leave the one page every user sees first stuck on Classic. It carries
+    // fifteen colours and a label - no configuration, no counts, nothing that
+    // is not already visible to anyone looking at the page.
+    // Read per request rather than cached: editing the file in the mounted
+    // volume should take effect on refresh, which is the whole point of it
+    // living outside the image.
+    { method: 'GET', path: /^\/api\/theme$/, authRequired: false, handler: (req, res) => {
+        const r = themeFile.loadTheme(DATA_DIR);
+        if (r.errors.length) {
+            // A broken file must not silently fall back to Classic - that reads
+            // as "my edit did nothing" and sends people editing it again.
+            console.error(new Date().toISOString(), '[theme] ignoring', r.path + ':', r.errors.join('; '));
+        }
+        ok(res, { theme: r.theme, warnings: r.warnings, errors: r.errors });
     } },
 
     { method: 'POST', path: /^\/api\/setup$/, authRequired: false, handler: async (req, res, p, body) => {

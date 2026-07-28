@@ -170,6 +170,18 @@
     $theme.value = Themes.currentTheme();
     $theme.addEventListener('change', () => Themes.applyTheme($theme.value));
 
+    // The custom slot arrives after a fetch, so add its option once that lands.
+    // Built here rather than in the loop above because it is not one of the 29
+    // and must not look like one: it goes first, ungrouped, above Classic.
+    Themes.ready.then((hasCustom) => {
+        if (!hasCustom) return;
+        const o = document.createElement('option');
+        o.value = 'custom';
+        o.textContent = Themes.THEMES.custom.label;
+        $theme.insertBefore(o, $theme.firstChild);
+        $theme.value = Themes.currentTheme();   // re-select: 'custom' existed nowhere a moment ago
+    });
+
     $logout.addEventListener('click', async () => {
         await api('POST', '/api/logout', {});
         location.hash = '#/alarms';

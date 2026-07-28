@@ -239,6 +239,7 @@
     };
 
     const KEY = 'alertcanvas-theme';
+    const CACHE = 'alertcanvas-theme-custom';   // last known <data>/theme.json
 
     function applyTheme(name) {
         const theme = THEMES[name] || THEMES.classic;
@@ -252,6 +253,48 @@
         try { return localStorage.getItem(KEY) || 'classic'; } catch (_) { return 'classic'; }
     }
 
-    window.Themes = { THEMES, applyTheme, currentTheme };
+    // --- the custom slot ----------------------------------------------------
+    // One operator-supplied palette from <data>/theme.json, served by
+    // /api/theme. It is NOT one of the 29 above: those are shipped product,
+    // duplicated across the suite and the style guide, so adding to them is
+    // drift. This one lives in the mounted volume, so editing it needs no
+    // rebuild - refresh and it is there.
+    //
+    // The cache is applied BEFORE the fetch. Otherwise every load paints
+    // Classic and then repaints, a visible flash on the one theme the user
+    // chose deliberately. The fetch then corrects it if the file changed.
+    function registerCustom(theme) {
+        if (!theme || !theme.vars) return false;
+        THEMES.custom = { label: theme.label || 'Custom', vars: theme.vars };
+        return true;
+    }
+
+    try {
+        const cached = localStorage.getItem(CACHE);
+        if (cached) registerCustom(JSON.parse(cached));
+    } catch (_) { /* an unparseable cache is not worth failing over */ }
+
     applyTheme(currentTheme());
+
+    const ready = fetch('api/theme', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+            if (!d) return false;
+            (d.warnings || []).forEach((w) => console.warn('[theme]', w));
+            (d.errors || []).forEach((e) => console.error('[theme]', e));
+            if (d.theme && registerCustom(d.theme)) {
+                try { localStorage.setItem(CACHE, JSON.stringify(d.theme)); } catch (_) { /* private mode */ }
+                if (currentTheme() === 'custom') applyTheme('custom');
+                return true;
+            }
+            // The file was deleted: drop the stale cache rather than keep
+            // showing a palette the operator has removed.
+            delete THEMES.custom;
+            try { localStorage.removeItem(CACHE); } catch (_) { /* private mode */ }
+            if (currentTheme() === 'custom') applyTheme('classic');
+            return false;
+        })
+        .catch(() => false);   // offline: the cache has already been applied
+
+    window.Themes = { THEMES, applyTheme, currentTheme, ready };
 })();
