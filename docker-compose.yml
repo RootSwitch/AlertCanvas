@@ -57,6 +57,14 @@ services:
       #- ALERTCANVAS_SECRET=a-long-random-string
       # Optional: read the feed from a different path inside the container
       #- STATUS_FILE=/status/snmp-status.json
+    # Run an init (tini) as PID 1 so orphaned processes get reaped. Node does
+    # not reap children it did not spawn, and the HEALTHCHECK's wget leaves an
+    # ssl_client behind on every HTTPS probe. Those zombies still hold a slot
+    # against the nproc limit of the HOST uid the container runs as (1000), so
+    # after about a day that user cannot fork anything - including its own SSH
+    # sessions, which fail with "Server refused to start a shell/command".
+    # Costs nothing: Docker ships the init binary, no image rebuild needed.
+    init: true
     logging: *default-logging
     restart: unless-stopped
 

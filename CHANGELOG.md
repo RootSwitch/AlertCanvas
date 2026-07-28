@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The container healthcheck no longer leaks zombies onto the host.** The
+  image runs `node` as PID 1, and Node does not reap processes it did not
+  spawn - so the HEALTHCHECK's `wget` left an `ssl_client` behind on every
+  HTTPS probe and nothing collected it. One a minute, indefinitely. A zombie
+  still holds a process slot against the `nproc` limit of the HOST uid the
+  container runs as (1000), so after roughly a day that user could no longer
+  fork: its SSH logins failed with "Server refused to start a shell/command"
+  while root connected fine, and only a reboot cleared it. The symptom points
+  nowhere near an alerting app, which is why it went unexplained for a while.
+  `docker-compose.yml` now sets `init: true`, putting tini at PID 1 to reap
+  orphans. No image rebuild needed - `docker compose up -d` recreates the
+  container with the init in place, and that also clears the existing zombies.
+
 - **Passwords hash and verify off the event loop.** `crypto.scryptSync` in
   `server/auth.js` serialised concurrent logins into one unbroken stall (8 at
   once measured ~218ms in which no scan ran and no notification dispatched),
