@@ -38,12 +38,17 @@ const outFile = opt('out', path.join(__dirname, '..', 'data', PING ? 'status-all
 
 const doc = JSON.parse(fs.readFileSync(inFile, 'utf8'));
 const nowIso = new Date().toISOString();
+const nowS = Math.floor(Date.now() / 1000);
 
 if (!has('stale')) {
+    // generatedAt / generated are ISO strings; sampledAt is EPOCH SECONDS as of
+    // export schema v4. Refreshing both with one ISO stamp produced a fixture
+    // that no real SNMPCanvas would ever write - harmless while nothing reads
+    // sampledAt, but the point of a fixture is to look like the real thing.
     if (PING) doc.generated = nowIso;
     else doc.generatedAt = nowIso;
-    for (const i of doc.interfaces || []) i.sampledAt = nowIso;
-    for (const m of doc.metrics || []) m.sampledAt = nowIso;
+    for (const i of doc.interfaces || []) i.sampledAt = nowS;
+    for (const m of doc.metrics || []) m.sampledAt = nowS;
 }
 
 for (const key of opts('pingdown')) {

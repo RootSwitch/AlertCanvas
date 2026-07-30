@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`tools/refresh-status.js` stamps `sampledAt` as epoch seconds.** It refreshed
+  `generatedAt` and every `sampledAt` with one ISO string, but as of export schema
+  v4 only the former is an ISO string - so the fixture it produced was one no real
+  SNMPCanvas would ever write. Harmless while nothing reads `sampledAt`, but the
+  point of a fixture is to look like the thing it stands in for, and a scanner
+  being developed against it should see the real shape.
+
 - **Bring your own theme, without a rebuild.** A `theme.json` in the data
   directory adds a thirtieth entry to the picker, above the twenty-nine shipped
   ones. It is the same fifteen `--se-*` variables, hex only, and partial files
