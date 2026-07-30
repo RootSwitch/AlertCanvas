@@ -239,7 +239,7 @@
     };
 
     const KEY = 'alertcanvas-theme';
-    const CACHE = 'alertcanvas-theme-custom';   // last known <data>/theme.json
+    const CACHE = KEY + '-custom';   // last known <data>/theme.json
 
     function applyTheme(name) {
         const theme = THEMES[name] || THEMES.classic;
