@@ -18,6 +18,55 @@
         return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // Sort key for the Watching list's Device column.
+    //
+    // That column shows the feed's `host`, which is SNMPCanvas's DEVICE NAME -
+    // so most of the time it is a name and a plain string compare is right.
+    // But SNMPCanvas names a device after its address when the device reports
+    // no sysName (`body.name || sysName || target.host`), and bulk-adding a
+    // list of addresses is the documented way to onboard a fleet. So this
+    // column fills with addresses on exactly the path the suite recommends,
+    // and a plain compare then puts 192.168.1.10 above 192.168.1.9.
+    //
+    // Padding each IPv4 octet to three digits and expanding IPv6 makes
+    // lexicographic order numeric order. The leading band digit keeps
+    // addresses and names in separate groups rather than interleaving them,
+    // which matters here precisely BECAUSE the list is mixed.
+    //
+    // Duplicated from SNMPCanvas's public/app.js on purpose - the suite has no
+    // shared package and each app stays zero-dependency, the same call already
+    // made for the SSO token's verify(). Keep them in step by hand; both have
+    // a check-sort test.
+    function expandIPv6(s) {
+        const t = s.replace(/^\[/, '').replace(/\]$/, '');
+        if (!/^[0-9a-fA-F:]+$/.test(t) || (t.match(/::/g) || []).length > 1) return null;
+        const halves = t.split('::');
+        const head = halves[0] ? halves[0].split(':') : [];
+        const tail = halves.length === 2 ? (halves[1] ? halves[1].split(':') : []) : [];
+        if (head.concat(tail).some((g) => g === '' || g.length > 4)) return null;
+        const fill = 8 - head.length - tail.length;
+        if (halves.length === 2 ? fill < 0 : fill !== 0) return null;
+        const groups = head.concat(new Array(halves.length === 2 ? fill : 0).fill('0'), tail);
+        return groups.map((g) => g.padStart(4, '0').toLowerCase()).join('');
+    }
+    function hostSortKey(h) {
+        const s = String(h == null ? '' : h).trim();
+        const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+        if (v4 && v4.slice(1, 5).every((o) => Number(o) <= 255)) {
+            return '1' + v4.slice(1, 5).map((o) => String(Number(o)).padStart(3, '0')).join('');
+        }
+        if (s.indexOf(':') >= 0) {
+            const v6 = expandIPv6(s);
+            if (v6) return '2' + v6;
+        }
+        return '3' + s.toLowerCase();
+    }
+    // Compare two Watching rows by device, then by a secondary field.
+    const byHostThen = (second) => (a, b) => {
+        const x = hostSortKey(a.host), y = hostSortKey(b.host);
+        return x < y ? -1 : x > y ? 1 : second(a).localeCompare(second(b));
+    };
+
     async function api(method, path, body) {
         const opts = { method, headers: {} };
         if (body !== undefined) {
@@ -572,7 +621,7 @@
         }
 
         const metricRows = w.metrics
-            .slice().sort((a, b) => a.host.localeCompare(b.host) || a.kind.localeCompare(b.kind))
+            .slice().sort(byHostThen((m) => String(m.kind || '')))
             .map((m) => `
             <tr>
                 <td>${esc(m.host)}</td>
@@ -584,7 +633,7 @@
             </tr>`).join('');
 
         const ifRows = w.interfaces
-            .slice().sort((a, b) => a.host.localeCompare(b.host) || a.name.localeCompare(b.name))
+            .slice().sort(byHostThen((i) => String(i.name || '')))
             .map((i) => {
                 const linkCls = i.down.current === 'alarm' ? 'cell-crit' : '';
                 const link = i.down.muted ? '<span class="muted small">muted</span>'
