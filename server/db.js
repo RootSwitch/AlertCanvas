@@ -215,7 +215,11 @@ const DEFAULTS = {
     // ping alerting (PingCanvas's status-all.json - reachability for devices
     // SNMPCanvas doesn't poll, e.g. ISP gateways). Opt-in per device: the
     // watch map is { feedKey: { label? } }, empty = the feature is inert.
-    ping_status_file: '/status/status-all.json',
+    // PING_STATUS_FILE mirrors STATUS_FILE above: a deploy-time default the
+    // suite installer sets when the poller's combined file lives under the
+    // wall split's .private dir. Live fallback only - a value saved in
+    // Settings still wins.
+    ping_status_file: process.env.PING_STATUS_FILE || '/status/status-all.json',
     ping_watch: '{}',
     ping_degraded_warn: '0',
     // email
