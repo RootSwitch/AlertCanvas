@@ -96,10 +96,10 @@ license makes forking genuinely easy.
 
 > **Installed via the [canvas-suite](https://github.com/RootSwitch/canvas-suite)
 > script?** Skip this section - your data lives under
-> `/srv/noc-data/alertcanvas`, the override (feed mount, ALERTCANVAS_SECRET,
+> `/srv/canvas-suite/alertcanvas`, the override (feed mount, ALERTCANVAS_SECRET,
 > SUITE_SECRET) is already written, and the app is running. Sign in through LaunchCanvas
 > (the setup script prints its admin password once, and stores it in
-> `/projects/launchcanvas/docker-compose.override.yml`); this app has no
+> `/opt/canvas-suite/launchcanvas/docker-compose.override.yml`); this app has no
 > login of its own until you set an optional fallback password in Settings.
 >
 > **Running the PingCanvas + AlertCanvas pair** (the `canvas-wall-setup.sh`
@@ -133,7 +133,7 @@ cat > docker-compose.override.yml <<'EOF'
 services:
   alertcanvas:
     volumes:
-      - /srv/noc-data:/status:ro,z
+      - /srv/canvas-suite:/status:ro,z
 EOF
 docker compose up -d --build
 ```
@@ -185,7 +185,7 @@ it's gitignored so updates never conflict with your edits:
 services:
   alertcanvas:
     volumes:
-      - /srv/noc-data:/status:ro,z
+      - /srv/canvas-suite:/status:ro,z
     environment:
       - TZ=America/Chicago
       #- ADMIN_PASSWORD=change-me
@@ -304,7 +304,7 @@ a first-class lightweight deployment - a ping wall that pages you, light
 enough for a Pi, with a plain JSON file as the only interconnect.
 
 Without SNMPCanvas on the box, mount the poller's output directory itself
-(e.g. `- /srv/noc-data:/status:ro,z` with
+(e.g. `- /srv/canvas-suite:/status:ro,z` with
 `PING_STATUS_FILE=/status/status-all.json`) - the wall script writes
 exactly this wiring.
 

@@ -2,8 +2,8 @@
 // Validate a custom theme before restarting anything.
 //
 //   node tools/check-theme.js                  # checks ./data/theme.json
-//   node tools/check-theme.js /srv/noc-data    # or a data directory
-//   node tools/check-theme.js /srv/noc-data/theme.json
+//   node tools/check-theme.js /srv/canvas-suite    # or a data directory
+//   node tools/check-theme.js /srv/canvas-suite/theme.json
 //
 // It calls the SAME loader the server calls, so this can never accept a file
 // the app would reject, or reject one the app would accept. Exit 1 on errors,

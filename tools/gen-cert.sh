@@ -11,7 +11,7 @@
 # whatever host directory you mount at /data in the container - ./data by
 # default, or set CERT_DIR when you've pointed the volume elsewhere:
 #
-#   CERT_DIR=/srv/noc-data/certs ./tools/gen-cert.sh 192.168.1.50
+#   CERT_DIR=/srv/canvas-suite/certs ./tools/gen-cert.sh 192.168.1.50
 #
 # The server detects the pair on start and switches to HTTPS automatically -
 # restart the container after running this. Browsers will warn about the
