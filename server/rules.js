@@ -101,9 +101,37 @@ function metricLabel(m) {
     return `${m.host} ${name}${redundant ? '' : ` (${m.kind})`}`;
 }
 
+// snmp-status.json v4 sends `device` as the device NAME (a string) and dropped
+// the per-interface `id`; v3 sent a {name,host,status} OBJECT plus that id.
+// Accept BOTH - the suite's apps upgrade independently, so AlertCanvas can meet
+// either version of SNMPCanvas (scanner.js already did this; rules.js did not,
+// which is the whole bug these three helpers exist to close). Reading v4 with
+// only the v3 shape yields an EMPTY device name, and an empty name is not a
+// cosmetic loss: it drops the host out of every interface alert's label and
+// `host` field, stops per-device overrides from matching, and defeats the
+// down-device suppression that keeps a dead switch from also alarming on all
+// 48 of its ports.
+function ifDevice(i) {
+    if (typeof i.device === 'string') { return i.device; }
+    return (i.device && i.device.name) || String(i.id || '').split(':')[0];
+}
+// host/status ride on the interface in v3 only. In v4 they live in the
+// devices[] roster, so callers pass a lookup built from it.
+function ifDeviceField(i, field) {
+    return (i.device && typeof i.device === 'object' && i.device[field]) || null;
+}
+function deviceStatusIndex(doc) {
+    const map = new Map();
+    for (const d of doc.devices || []) { if (d && d.name) { map.set(d.name, d); } }
+    return map;
+}
+
 function ifLabel(i) {
-    const dev = (i.device && i.device.name) || String(i.id || '').split(':')[0];
-    return `${dev} ${i.name}${i.alias ? ` (${i.alias})` : ''}`;
+    const dev = ifDevice(i);
+    // No device name at all (a malformed feed): fall back to the bare
+    // interface rather than emitting a leading space.
+    const head = dev ? `${dev} ` : '';
+    return `${head}${i.name}${i.alias ? ` (${i.alias})` : ''}`;
 }
 
 function evaluate(doc, config) {
@@ -136,14 +164,15 @@ function evaluate(doc, config) {
         for (const d of doc.devices || []) deviceRule(d && d.name, d && d.host, d && d.status);
     }
     for (const i of doc.interfaces || []) {
-        const d = i.device || {};
-        deviceRule(d.name || String(i.id || '').split(':')[0], d.host, d.status);
+        // v4 carries no host/status here - the roster above already registered
+        // both, and seenDevices makes this a no-op for names it covered.
+        deviceRule(ifDevice(i), ifDeviceField(i, 'host'), ifDeviceField(i, 'status'));
     }
 
     // --- interfaces ---
     for (const i of doc.interfaces || []) {
         if (!i || !i.code) continue; // no stable key - nothing to alert on
-        const dev = (i.device && i.device.name) || String(i.id || '').split(':')[0];
+        const dev = ifDevice(i);
         const label = ifLabel(i);
         // A down device already alerted above - don't pile on per-interface
         // alerts whose real cause is the device. Freeze instead of reporting
@@ -294,9 +323,13 @@ function explain(doc, config) {
         for (const d of doc.devices || []) addDevice(d && d.name, d && d.host, d && d.status);
     }
     const interfaces = [];
+    const statusByName = deviceStatusIndex(doc);
     for (const i of doc.interfaces || []) {
-        const dev = (i.device && i.device.name) || String(i.id || '').split(':')[0];
-        addDevice(dev, i.device && i.device.host, i.device && i.device.status);
+        const dev = ifDevice(i);
+        const roster = statusByName.get(dev);
+        addDevice(dev,
+            ifDeviceField(i, 'host') || (roster && roster.host),
+            ifDeviceField(i, 'status') || (roster && roster.status));
 
         const down = resolveBoolInfo(idx, config.ifRules.down, i.code, dev, 'if-down');
         const level = (aspect, kind, worst, pct) => {
@@ -316,7 +349,10 @@ function explain(doc, config) {
         interfaces.push({
             code: i.code, id: i.id, host: dev, name: i.name, alias: i.alias || '',
             operStatus: i.operStatus, adminStatus: i.adminStatus,
-            deviceStatus: (i.device && i.device.status) || 'unknown',
+            // v4: status comes from the devices[] roster, joined by name -
+            // without this the Watching page reported every interface's device
+            // as 'unknown' on a current feed.
+            deviceStatus: ifDeviceField(i, 'status') || (roster && roster.status) || 'unknown',
             down: {
                 rule: down.rule, source: down.source, muted: down.muted,
                 current: down.rule

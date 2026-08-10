@@ -247,6 +247,54 @@ test('device-down rule can be muted per host', () => {
     assert.strictEqual(conds.find((c) => c.key === 'device:sw1'), undefined);
 });
 
+// --- snmp-status.json schema v4 (device is a NAME, no per-interface id) -----
+// Every fixture above is v3, which is exactly how a v4 regression shipped
+// unnoticed: rules.js read only the object shape, so against a CURRENT
+// SNMPCanvas feed the device name came out empty. The symptom the user hit was
+// a cryptic alert ("vtnet2 utilization is crit" - on which host?), but the
+// silent half was worse: no host attribution, per-device overrides not
+// matching, and no down-device suppression.
+function ifaceV4(over = {}) {
+    const { device, id, ...rest } = iface(over);
+    return { device: 'sw1', ...rest, ...over };   // v4: string name, no id
+}
+const rosterV4 = (status = 'up') => [{ name: 'sw1', host: '10.0.0.1', status }];
+
+test('v4: interface labels carry the device name', () => {
+    const c = byKey(evalOne({ devices: rosterV4(), interfaces: [ifaceV4({ inBps: 99e7 })] }), 'if:I1:util');
+    assert.strictEqual(c.label, 'sw1 eth0 utilization');
+    assert.strictEqual(c.host, 'sw1');
+});
+test('v4: an alias still renders beside the name', () => {
+    const c = byKey(evalOne({ devices: rosterV4(), interfaces: [ifaceV4({ alias: 'uplink' })] }), 'if:I1:down');
+    assert.strictEqual(c.label, 'sw1 eth0 (uplink) link');
+});
+test('v4: per-device interface overrides match', () => {
+    const cfg = config({ overrides: [{ scope: 'host-kind', code: null, host: 'sw1', kind: 'if-util', warn: null, crit: null, severity: null, enabled: 0 }] });
+    const conds = evalOne({ devices: rosterV4(), interfaces: [ifaceV4({ inBps: 99e7 })] }, cfg);
+    assert.strictEqual(conds.find((c) => c.key === 'if:I1:util'), undefined);
+});
+test('v4: a down device still suppresses its interface rules', () => {
+    const conds = evalOne({
+        devices: rosterV4('down'),
+        interfaces: [ifaceV4({ operStatus: 'unknown', adminStatus: 'unknown', inBps: null, outBps: null })]
+    });
+    assert.strictEqual(byKey(conds, 'device:sw1').severity, 'crit');
+    assert.strictEqual(byKey(conds, 'if:I1:down').frozen, true);
+    assert.strictEqual(byKey(conds, 'if:I1:down').host, 'sw1');
+});
+test('v4: the Watching view resolves device status from the roster', () => {
+    const view = rules.explain({ devices: rosterV4('down'), interfaces: [ifaceV4()] }, config());
+    const i = (view.interfaces || [])[0];
+    assert.ok(i, 'expected one interface row in the Watching view');
+    assert.strictEqual(i.host, 'sw1');
+    assert.strictEqual(i.deviceStatus, 'down');   // was 'unknown' for every row on v4
+});
+test('a malformed feed with no device name emits no leading space', () => {
+    const c = byKey(evalOne({ interfaces: [iface({ device: null, id: undefined, inBps: 99e7 })] }), 'if:I1:util');
+    assert.strictEqual(c.label, 'eth0 utilization');
+});
+
 // --- labels ---
 test('metric label keeps the multi-word display name and appends the kind', () => {
     const c = byKey(evalOne({ metrics: [metric({ kind: 'util', display: 'UPS1-Load 85%', value: 85, host: 'ups-host',
