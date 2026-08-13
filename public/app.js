@@ -805,6 +805,18 @@
         return vals;
     }
 
+    // The consequence line for the retention setting - counts and a date only.
+    // The siblings project size and rate, but alerts are sparse events: the
+    // oldest row marks when the network last misbehaved that long ago, not the
+    // retention window, and a rate projection built on alert arrival would be
+    // noise. Counts and a date are the honest subset.
+    function historyNote(h) {
+        if (!h || (h.clearedAlerts === 0 && h.notificationRows === 0)) return 'No alert history yet.';
+        const some = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
+        const oldest = h.oldestTs ? `; oldest ${new Date(h.oldestTs * 1000).toLocaleDateString()}` : '';
+        return `Currently holding ${some(h.clearedAlerts, 'cleared alert')} and ${some(h.notificationRows, 'notification row')}${oldest}.`;
+    }
+
     async function renderSettings(restore) {
         setNav('settings', true);
         let s, overrides, sources;
@@ -1048,6 +1060,7 @@
             <div class="form-grid" style="margin-top:14px">
                 <label>History retention (days)</label><input type="number" id="set-retentionDays" value="${s.retentionDays}" min="1">
             </div>
+            <div class="section-note" title="An oldest row younger than the window usually means nothing alerted before then, not that history was trimmed - alerts only exist when something happens.">${historyNote(s.history)}</div>
             <div class="form-actions">
                 <button class="btn-primary" id="save-data">Save</button>
                 <a class="btn" href="/api/backup" title="Consistent SQLite snapshot: settings, thresholds, overrides, alarm history">Download backup</a>

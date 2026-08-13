@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **The retention setting shows what it is holding.** A line under History
+  Retention counts the cleared alerts and notification rows currently kept,
+  with the oldest row's date. Unlike its siblings' readouts there is no size
+  or growth projection, on purpose: alerts are sparse events, so an oldest
+  row younger than the window usually means nothing alerted before then, not
+  that history was trimmed - and the tooltip says exactly that. (The whole
+  history stays kilobyte-sized regardless; this is about visibility, not
+  disk.)
+
 - **`tools/refresh-status.js` stamps `sampledAt` as epoch seconds.** It refreshed
   `generatedAt` and every `sampledAt` with one ISO string, but as of export schema
   v4 only the former is an ISO string - so the fixture it produced was one no real

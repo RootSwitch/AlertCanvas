@@ -153,6 +153,20 @@ const INT_RANGE = {
 const BOOL_KEYS = new Set(['email_enabled', 'syslog_enabled', 'ntfy_enabled', 'smtp_allow_self_signed', 'reboot_detect', 'ping_degraded_warn']);
 const SCAN_KEYS = new Set(['status_file', 'scan_interval_s']);
 
+// What the retention window is actually holding: cleared-alert and
+// notification-row counts plus the oldest row across both pruned tables.
+// Deliberately no size or rate projection like the siblings show - alerts are
+// sparse events, so those numbers would measure when the network last
+// misbehaved, not the retention setting. Both queries ride existing indexes
+// (idx_alerts_hist, idx_notifications_ts) on tables that stay kilobyte-sized.
+// Exported for tools/check-retention.js.
+function historyInventory() {
+    const a = db.prepare("SELECT count(*) AS n, min(cleared_ts) AS oldest FROM alerts WHERE state = 'cleared'").get();
+    const n = db.prepare('SELECT count(*) AS n, min(ts) AS oldest FROM notifications').get();
+    const oldest = [a.oldest, n.oldest].filter((v) => v != null);
+    return { clearedAlerts: a.n, notificationRows: n.n, oldestTs: oldest.length ? Math.min(...oldest) : null };
+}
+
 // --- route table ---
 // handler(req, res, params, body, query). `authRequired: false` routes are public.
 // A stored secret only ever goes to the destination it was stored for. Omitting
@@ -410,7 +424,8 @@ const routes = [
             smtpPassSet: !!getSetting('smtp_pass'),
             ntfyTokenSet: !!getSetting('ntfy_token'),
             dataDir: DATA_DIR,
-            credentialEncryption: !!process.env.ALERTCANVAS_SECRET
+            credentialEncryption: !!process.env.ALERTCANVAS_SECRET,
+            history: historyInventory()
         });
     } },
 
@@ -670,4 +685,4 @@ function readJson(req, limit = 1024 * 1024) {
     });
 }
 
-module.exports = { handle };
+module.exports = { handle, historyInventory };
