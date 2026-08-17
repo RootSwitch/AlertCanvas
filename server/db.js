@@ -174,16 +174,27 @@ const setSettingStmt = db.prepare(
 // Per-kind threshold defaults. Direction is fixed per kind (rules.js):
 // battery/runtime/uptime alert when the value drops TO OR BELOW the level,
 // everything else when it rises to or above it. null = no default - that
-// kind alerts only via an override (fan rpm and power watts have no
-// universal number; outlet/uptime are opt-in).
+// kind alerts only via an override (fan rpm, power watts and temperature
+// have no universal number; outlet/uptime are opt-in).
 const DEFAULT_THRESHOLDS = {
     cpu: { warn: 85, crit: 95 },       // matches SNMPCanvas's exported status
     mem: { warn: 85, crit: 95 },
     disk: { warn: 85, crit: 95 },
-    temp: { warn: 45, crit: 55 },      // C
     util: { warn: 70, crit: 90 },      // UPS load / generic gauge %
     battery: { warn: 50, crit: 20 },   // <=, matches SNMPCanvas
     runtime: { warn: 600, crit: 300 }, // <= seconds of battery runtime left
+    // temp has NO DEFAULT, deliberately, and it is the one kind where that
+    // looks like an oversight. Celsius reads as an absolute scale, so a number
+    // here seems more portable than fan rpm - but the sensor's SUBJECT sets the
+    // range, and the feed does not say what the sensor is on. A small-form-
+    // factor host idling at 65C is healthy; a spinning disk at 50C is wearing
+    // out; a 40C INLET reading is an emergency. The old 45/55 made every mini
+    // PC in the fleet permanently critical. This also matches what production
+    // NMS platforms do: Zenoss and SolarWinds ship temperature alerting off,
+    // and Catalyst Center only gets it right by supporting a narrow device list
+    // with per-sensor built-in limits - the one thing a generic collector that
+    // takes whatever the feed reports cannot copy.
+    temp: null,
     fan: null,
     power: null,
     outlet: null,
@@ -282,6 +293,34 @@ function setSetting(key, value) { setSettingStmt.run(key, String(value)); }
         const row = getSettingStmt.get(key);
         if (row && row.value === old) setSettingStmt.run(key, DEFAULTS[key]);
     }
+})();
+
+// --- migration: temperature lost its default (warn 45 / crit 55 C, see the
+// note on DEFAULT_THRESHOLDS). Same rule as the template upgrade above, and
+// for the same reason: DEFAULTS are only a read-time FALLBACK, so an install
+// that never saved the Settings tab picks the new behaviour up for free, and
+// this exists for the ones that persisted the old numbers by saving.
+//
+// Only the OLD DEFAULT VERBATIM is cleared - change either number and it is
+// treated as a choice and left alone. The known cost: somebody who
+// deliberately set 45/55 (right for a UPS battery, say) is indistinguishable
+// from somebody who never touched it, and gets cleared too. Accepted, because
+// the alternative is leaving every mini PC permanently critical to protect a
+// setting that reproduces the default. Either way the repair is the same one
+// the new behaviour asks for anyway: an override on the host or the exported
+// value, where the sensor is actually known.
+(function upgradeTempThreshold() {
+    const row = getSettingStmt.get('thresholds');
+    if (!row) return;                       // never saved Settings: reads through to DEFAULTS
+    let stored;
+    // A corrupt blob already falls back to defaults at read time (api.js), so
+    // crashing the boot over one here would be a new failure, not a caught one.
+    try { stored = JSON.parse(row.value); } catch (_) { return; }
+    if (!stored || typeof stored !== 'object') return;
+    const t = stored.temp;
+    if (!t || t.warn !== 45 || t.crit !== 55) return;
+    stored.temp = null;
+    setSettingStmt.run('thresholds', JSON.stringify(stored));
 })();
 
 // --- SMTP password encryption at rest (optional, ALERTCANVAS_SECRET) ---

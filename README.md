@@ -259,12 +259,11 @@ feed path in Settings or `STATUS_FILE`).
 | Rule | Default | Direction |
 |---|---|---|
 | CPU / memory / disk utilization | warn 85, crit 95 (%) | >= |
-| Temperature | warn 45, crit 55 (C) | >= |
 | Gauge / UPS load (`util`) | warn 70, crit 90 (%) | >= |
 | Battery charge | warn 50, crit 20 (%) | <= |
 | Battery runtime | warn 600, crit 300 (s) | <= |
 | Status alarm (`state`: UPS on battery, fault flags) | crit | >= |
-| Fan rpm, power draw, meters (A/V), outlet, uptime | off (no universal number) | override-only |
+| Temperature, fan rpm, power draw, meters (A/V), outlet, uptime | off (no universal number) | override-only |
 | Reboot (exported uptime goes backwards) | warn, one-shot event | - |
 | Interface link down (oper down while admin up) | crit | - |
 | Interface errors / discards | 1/10 and 5/50 pkt/s | >= |
@@ -273,6 +272,12 @@ feed path in Settings or `STATUS_FILE`).
 | Ping device down (PingCanvas feed, opt-in per device) | crit | - |
 | Ping device degraded (high latency) | off (opt-in warn) | - |
 | Stale, missing, or unreadable status file | crit | - |
+
+Temperature is deliberately in the override-only row. A reading in Celsius
+looks portable, but the feed does not say what the sensor is attached to: a
+small-form-factor host idling at 65C is healthy, a spinning disk at 50C is
+wearing out, and a 40C inlet reading is an emergency. Set it per host or per
+exported value, where you know what is being measured.
 
 Per-kind defaults apply everywhere; overrides change or mute a single
 exported value (by its stable code) or one host+kind. A down device raises

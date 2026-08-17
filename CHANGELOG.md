@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Temperature no longer has a default threshold.** It shipped at warn 45 /
+  crit 55 C, which is a UPS-battery or switch-inlet number - on a small-form-
+  factor host it made idle temperatures permanently critical. The feed does
+  not say what a sensor is attached to, and the same reading means opposite
+  things on an NVMe drive, a spinning disk and an air inlet, so `temp` now
+  joins fan rpm, power draw and meters as override-only. Existing installs
+  that persisted the old 45/55 are cleared on the next start; a temperature
+  threshold you actually chose is left alone. To keep alerting on it, set an
+  override on the host or the exported value, where the sensor is known.
+
 - **The retention setting shows what it is holding.** A line under History
   Retention counts the cleared alerts and notification rows currently kept,
   with the oldest row's date. Unlike its siblings' readouts there is no size

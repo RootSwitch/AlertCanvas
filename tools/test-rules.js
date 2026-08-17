@@ -125,6 +125,25 @@ test('kind with null default produces no condition', () => {
     assert.strictEqual(conds.find((c) => c.key === 'metric:M1'), undefined);
 });
 
+// Temperature ships with NO default (server/db.js) - the feed does not say
+// what the sensor is on, and 45/55 made every mini PC permanently critical.
+// The generic case above uses `fan`; these pin temperature specifically,
+// because temp is the kind most likely to have a number put back into it.
+test('temperature has no default, so even a hot host is silent', () => {
+    const cfg = config({ thresholds: { temp: null } });
+    const conds = evalOne({ metrics: [metric({ kind: 'temp', value: 90, unit: 'C' })] }, cfg);
+    assert.strictEqual(conds.find((c) => c.key === 'metric:M1'), undefined);
+});
+test('an override restores temperature alerting', () => {
+    const cfg = config({
+        thresholds: { temp: null },
+        overrides: [{ scope: 'code', code: 'M1', host: null, kind: 'temp', warn: 50, crit: 60, severity: null, enabled: 1 }]
+    });
+    const doc = { metrics: [metric({ kind: 'temp', value: 55, unit: 'C' })] };
+    assert.strictEqual(byKey(evalOne(doc, cfg), 'metric:M1').severity, 'warn');
+    assert.strictEqual(byKey(evalOne({ metrics: [metric({ kind: 'temp', value: 61, unit: 'C' })] }, cfg), 'metric:M1').severity, 'crit');
+});
+
 // --- override precedence ---
 test('code override beats host-kind override beats default', () => {
     const doc = { metrics: [metric({ value: 60 })] };
