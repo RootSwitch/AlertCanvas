@@ -14,6 +14,38 @@
 // uptime seconds - a reboot shows as uptime collapsing).
 const LOWER_IS_BAD = new Set(['battery', 'runtime', 'uptime']);
 
+// A `state` sensor reading 1 means opposite things on opposite devices. On a
+// UPS it is "running on battery" - the emergency this app largely exists for.
+// On a laptop or a handheld it is Tuesday. The default (crit at 1) was written
+// when every device exposing a state sensor was a UPS or a switch; agents that
+// report host power put one on every unplugged endpoint, which would hold a
+// crit for as long as somebody works untethered.
+//
+// The device says which it is by what ELSE it reports. A UPS exposes battery,
+// runtime and state and knows nothing about an operating system; a switch
+// exposes cpu and memory but has no battery at all. Only a battery-powered
+// COMPUTER reports both a battery and a filesystem, and a filesystem is the
+// signal that cannot be faked by an appliance - no UPS or PDU has one.
+//
+// So: state keeps its default everywhere except on hosts that report BOTH a
+// battery and a disk, where it resolves to no rule. Deliberately a change of
+// DEFAULT and not a mute: an override on the host or the value re-enables it,
+// and the Watching page names the reason rather than showing a blank.
+const BATTERY_HOST_KINDS = ['battery', 'disk'];
+function batteryPoweredHosts(metrics) {
+    const seen = new Map();
+    for (const m of metrics || []) {
+        if (!m || !m.host || !m.kind) continue;
+        if (!seen.has(m.host)) seen.set(m.host, new Set());
+        seen.get(m.host).add(m.kind);
+    }
+    const out = new Set();
+    for (const [host, kinds] of seen) {
+        if (BATTERY_HOST_KINDS.every((k) => kinds.has(k))) out.add(host);
+    }
+    return out;
+}
+
 const METRIC_KINDS = ['cpu', 'mem', 'disk', 'temp', 'fan', 'power', 'util',
     'battery', 'runtime', 'outlet', 'uptime', 'meter', 'state'];
 
@@ -37,7 +69,7 @@ function buildOverrideIndex(overrides) {
 // Resolve the {warn, crit} pair for one leveled target, remembering WHERE the
 // rule came from so the Watching page can show it. levels null = nothing to
 // evaluate (muted, disabled, or no rule).
-function resolveLevelsInfo(idx, defaults, code, host, kind) {
+function resolveLevelsInfo(idx, defaults, code, host, kind, batteryHosts) {
     const o = idx.byCode.get(`${code}|${kind}`) || idx.byHostKind.get(`${host}|${kind}`);
     if (o) {
         const source = o.scope === 'code' ? 'override' : 'host override';
@@ -45,13 +77,16 @@ function resolveLevelsInfo(idx, defaults, code, host, kind) {
         if (o.warn == null && o.crit == null) return { levels: null, source, muted: false };
         return { levels: { warn: o.warn, crit: o.crit }, source, muted: false };
     }
+    if (kind === 'state' && batteryHosts && batteryHosts.has(host)) {
+        return { levels: null, source: 'battery-powered host', muted: false };
+    }
     if (!defaults || (defaults.warn == null && defaults.crit == null)) {
         return { levels: null, source: 'none', muted: false };
     }
     return { levels: { warn: defaults.warn ?? null, crit: defaults.crit ?? null }, source: 'default', muted: false };
 }
-function resolveLevels(idx, defaults, code, host, kind) {
-    return resolveLevelsInfo(idx, defaults, code, host, kind).levels;
+function resolveLevels(idx, defaults, code, host, kind, batteryHosts) {
+    return resolveLevelsInfo(idx, defaults, code, host, kind, batteryHosts).levels;
 }
 
 // Resolve a boolean rule (if-down, device-down) the same way.
@@ -136,6 +171,7 @@ function ifLabel(i) {
 
 function evaluate(doc, config) {
     const idx = buildOverrideIndex(config.overrides);
+    const batteryHosts = batteryPoweredHosts(doc && doc.metrics);
     const out = [];
 
     // --- device down (deduped per host; suppresses that device's other rules) ---
@@ -237,7 +273,7 @@ function evaluate(doc, config) {
     for (const m of doc.metrics || []) {
         if (!m || !m.code) continue; // no stable key - nothing to alert on
         if (!METRIC_KINDS.includes(m.kind)) continue; // future kinds: ignore until configured
-        const levels = resolveLevels(idx, config.thresholds[m.kind], m.code, m.host, m.kind);
+        const levels = resolveLevels(idx, config.thresholds[m.kind], m.code, m.host, m.kind, batteryHosts);
         if (!levels) continue;
         if (downDevices.has(m.host)) {
             out.push({
@@ -288,10 +324,12 @@ function detectReboots(prev, metrics) {
 function explain(doc, config) {
     const idx = buildOverrideIndex(config.overrides);
 
+    const batteryHosts = batteryPoweredHosts(doc && doc.metrics);
+
     const metrics = (doc.metrics || []).map((m) => {
         const known = METRIC_KINDS.includes(m.kind);
         const info = known
-            ? resolveLevelsInfo(idx, config.thresholds[m.kind], m.code, m.host, m.kind)
+            ? resolveLevelsInfo(idx, config.thresholds[m.kind], m.code, m.host, m.kind, batteryHosts)
             : { levels: null, source: 'none', muted: false };
         const numeric = typeof m.value === 'number' && Number.isFinite(m.value);
         let current = null;
@@ -411,4 +449,4 @@ function evaluatePing(doc, watch, opts) {
     return out;
 }
 
-module.exports = { evaluate, evaluatePing, explain, detectReboots, LOWER_IS_BAD, METRIC_KINDS };
+module.exports = { evaluate, evaluatePing, explain, detectReboots, LOWER_IS_BAD, METRIC_KINDS, batteryPoweredHosts };

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **An unplugged laptop is not an emergency.** `state` defaults to crit at 1,
+  with a comment calling that "universally alert-worthy" - true when every
+  device exposing a state sensor was a UPS or a switch. Agents that report
+  host power put one on every laptop and handheld, where on-battery is the
+  normal condition, so a fleet of them would hold crits for as long as anyone
+  worked untethered. Seen on a real handheld: "On battery", 7h 9m of runtime
+  left, nothing wrong with it.
+
+  The threshold cannot tell the two apart, but the device can: a UPS reports
+  battery, runtime and state and knows nothing about an operating system,
+  while only a battery-powered computer reports both a battery and a
+  filesystem - and no appliance has a filesystem. The `state` default is now
+  suppressed on hosts matching that shape. A UPS on battery still crits, a
+  switch's fault flag still crits, and every other kind on the laptop
+  evaluates normally. It is a change of default rather than a mute: an
+  override on the host or the exported value re-enables it (a cafe watching
+  charging docks would want exactly that), and the Watching page shows
+  "battery-powered host" as the source instead of a blank.
+
 - **Temperature no longer has a default threshold.** It shipped at warn 45 /
   crit 55 C, which is a UPS-battery or switch-inlet number - on a small-form-
   factor host it made idle temperatures permanently critical. The feed does
