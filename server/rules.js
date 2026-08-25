@@ -14,23 +14,25 @@
 // uptime seconds - a reboot shows as uptime collapsing).
 const LOWER_IS_BAD = new Set(['battery', 'runtime', 'uptime']);
 
-// A `state` sensor reading 1 means opposite things on opposite devices. On a
-// UPS it is "running on battery" - the emergency this app largely exists for.
-// On a laptop or a handheld it is Tuesday. The default (crit at 1) was written
-// when every device exposing a state sensor was a UPS or a switch; agents that
-// report host power put one on every unplugged endpoint, which would hold a
-// crit for as long as somebody works untethered.
+// Hosts that report BOTH a battery and a filesystem. A `state` sensor reading
+// 1 means opposite things on opposite devices - on a UPS it is "running on
+// battery", the emergency this app largely exists for; on a laptop it is
+// Tuesday - and this is the closest the feed comes to telling them apart.
 //
-// The device says which it is by what ELSE it reports. A UPS exposes battery,
-// runtime and state and knows nothing about an operating system; a switch
-// exposes cpu and memory but has no battery at all. Only a battery-powered
-// COMPUTER reports both a battery and a filesystem, and a filesystem is the
-// signal that cannot be faked by an appliance - no UPS or PDU has one.
+// IT IS A HINT, NOT A VERDICT, and the distinction was paid for. An earlier
+// version of this file SUPPRESSED the state default on these hosts, on the
+// reasoning that no UPS or PDU has a filesystem. True, and irrelevant: a
+// SERVER wired to a UPS reports that UPS's battery and runtime through its
+// own agent, alongside its own disks. In the feed it is byte-for-byte a
+// laptop. Real fleet, real hosts - three Proxmox machines reporting an APC
+// at "100% / 2h 8m" - and the suppression would have silenced exactly the
+// alarm they exist to raise.
 //
-// So: state keeps its default everywhere except on hosts that report BOTH a
-// battery and a disk, where it resolves to no rule. Deliberately a change of
-// DEFAULT and not a mute: an override on the host or the value re-enables it,
-// and the Watching page names the reason rather than showing a blank.
+// So the inference stays and the decision goes. A wrong guess here fails
+// SILENTLY on a genuine outage, which is strictly worse than the noise it was
+// removing: noise is visible and one override fixes it, silence is neither.
+// The hint reaches the Watching page so an operator can mute the laptops in a
+// click, which is the machine proposing rather than deciding.
 const BATTERY_HOST_KINDS = ['battery', 'disk'];
 function batteryPoweredHosts(metrics) {
     const seen = new Map();
@@ -69,7 +71,7 @@ function buildOverrideIndex(overrides) {
 // Resolve the {warn, crit} pair for one leveled target, remembering WHERE the
 // rule came from so the Watching page can show it. levels null = nothing to
 // evaluate (muted, disabled, or no rule).
-function resolveLevelsInfo(idx, defaults, code, host, kind, batteryHosts) {
+function resolveLevelsInfo(idx, defaults, code, host, kind) {
     const o = idx.byCode.get(`${code}|${kind}`) || idx.byHostKind.get(`${host}|${kind}`);
     if (o) {
         const source = o.scope === 'code' ? 'override' : 'host override';
@@ -77,16 +79,13 @@ function resolveLevelsInfo(idx, defaults, code, host, kind, batteryHosts) {
         if (o.warn == null && o.crit == null) return { levels: null, source, muted: false };
         return { levels: { warn: o.warn, crit: o.crit }, source, muted: false };
     }
-    if (kind === 'state' && batteryHosts && batteryHosts.has(host)) {
-        return { levels: null, source: 'battery-powered host', muted: false };
-    }
     if (!defaults || (defaults.warn == null && defaults.crit == null)) {
         return { levels: null, source: 'none', muted: false };
     }
     return { levels: { warn: defaults.warn ?? null, crit: defaults.crit ?? null }, source: 'default', muted: false };
 }
-function resolveLevels(idx, defaults, code, host, kind, batteryHosts) {
-    return resolveLevelsInfo(idx, defaults, code, host, kind, batteryHosts).levels;
+function resolveLevels(idx, defaults, code, host, kind) {
+    return resolveLevelsInfo(idx, defaults, code, host, kind).levels;
 }
 
 // Resolve a boolean rule (if-down, device-down) the same way.
@@ -171,7 +170,6 @@ function ifLabel(i) {
 
 function evaluate(doc, config) {
     const idx = buildOverrideIndex(config.overrides);
-    const batteryHosts = batteryPoweredHosts(doc && doc.metrics);
     const out = [];
 
     // --- device down (deduped per host; suppresses that device's other rules) ---
@@ -273,7 +271,7 @@ function evaluate(doc, config) {
     for (const m of doc.metrics || []) {
         if (!m || !m.code) continue; // no stable key - nothing to alert on
         if (!METRIC_KINDS.includes(m.kind)) continue; // future kinds: ignore until configured
-        const levels = resolveLevels(idx, config.thresholds[m.kind], m.code, m.host, m.kind, batteryHosts);
+        const levels = resolveLevels(idx, config.thresholds[m.kind], m.code, m.host, m.kind);
         if (!levels) continue;
         if (downDevices.has(m.host)) {
             out.push({
@@ -329,7 +327,7 @@ function explain(doc, config) {
     const metrics = (doc.metrics || []).map((m) => {
         const known = METRIC_KINDS.includes(m.kind);
         const info = known
-            ? resolveLevelsInfo(idx, config.thresholds[m.kind], m.code, m.host, m.kind, batteryHosts)
+            ? resolveLevelsInfo(idx, config.thresholds[m.kind], m.code, m.host, m.kind)
             : { levels: null, source: 'none', muted: false };
         const numeric = typeof m.value === 'number' && Number.isFinite(m.value);
         let current = null;
@@ -340,6 +338,12 @@ function explain(doc, config) {
             code: m.code, kind: m.kind, host: m.host, display: m.display,
             value: numeric ? round2(m.value) : null, unit: m.unit || '',
             lowerIsBad: LOWER_IS_BAD.has(m.kind),
+            // Only on `state`, and only as a suggestion: this host reports a
+            // battery AND a filesystem, so it is either a laptop (where "on
+            // battery" is normal and worth muting) or a server wired to a UPS
+            // (where it is an outage and must not be). The app cannot tell;
+            // the operator can, in one click.
+            batteryHost: m.kind === 'state' && batteryHosts.has(m.host) ? true : undefined,
             rule: info.levels, source: info.source, muted: info.muted, current
         };
     });

@@ -263,7 +263,6 @@ feed path in Settings or `STATUS_FILE`).
 | Battery charge | warn 50, crit 20 (%) | <= |
 | Battery runtime | warn 600, crit 300 (s) | <= |
 | Status alarm (`state`: UPS on battery, fault flags) | crit | >= |
-| Status alarm on a battery-powered computer | off (see below) | - |
 | Temperature, fan rpm, power draw, meters (A/V), outlet, uptime | off (no universal number) | override-only |
 | Reboot (exported uptime goes backwards) | warn, one-shot event | - |
 | Interface link down (oper down while admin up) | crit | - |
@@ -275,13 +274,15 @@ feed path in Settings or `STATUS_FILE`).
 | Stale, missing, or unreadable status file | crit | - |
 
 A `state` sensor reading "on battery" means opposite things on opposite
-devices: on a UPS it is the emergency this app exists for, on a laptop or a
-handheld it is Tuesday. AlertCanvas tells them apart by what else the host
-reports - only a battery-powered computer reports both a battery and a
-filesystem, since no UPS or PDU has one - and suppresses the `state` default
-there. A UPS on battery still alerts; a switch's fault flag still alerts. It
-is a default, not a mute, so an override on the host or the value turns it
-back on, and the Watching page names the reason rather than showing a blank.
+devices: on a UPS it is the emergency this app exists for, on a laptop it is
+Tuesday. **AlertCanvas does not guess.** Nothing in the feed separates them -
+a server wired to a UPS reports that UPS's battery and runtime through its own
+agent, alongside its own disks, so it looks exactly like a laptop. Guessing
+wrong there fails silently on a real outage, which is worse than the noise it
+would remove. So `state` alerts on every device, and the Watching page flags
+hosts reporting both a battery and a filesystem as "laptop or UPS-backed?"
+with the mute button beside them. One click per laptop, and no server ever
+goes quiet on its own.
 
 Temperature is deliberately in the override-only row. A reading in Celsius
 looks portable, but the feed does not say what the sensor is attached to: a

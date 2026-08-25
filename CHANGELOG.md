@@ -2,24 +2,24 @@
 
 ## Unreleased
 
-- **An unplugged laptop is not an emergency.** `state` defaults to crit at 1,
-  with a comment calling that "universally alert-worthy" - true when every
-  device exposing a state sensor was a UPS or a switch. Agents that report
-  host power put one on every laptop and handheld, where on-battery is the
-  normal condition, so a fleet of them would hold crits for as long as anyone
-  worked untethered. Seen on a real handheld: "On battery", 7h 9m of runtime
-  left, nothing wrong with it.
+- **The Watching page flags hosts that might be laptops, and alerts on all of
+  them anyway.** A `state` sensor reading "on battery" is an emergency on a UPS
+  and normal on a handheld, and the shipped default (crit at 1) held a crit for
+  as long as anyone worked untethered.
 
-  The threshold cannot tell the two apart, but the device can: a UPS reports
-  battery, runtime and state and knows nothing about an operating system,
-  while only a battery-powered computer reports both a battery and a
-  filesystem - and no appliance has a filesystem. The `state` default is now
-  suppressed on hosts matching that shape. A UPS on battery still crits, a
-  switch's fault flag still crits, and every other kind on the laptop
-  evaluates normally. It is a change of default rather than a mute: an
-  override on the host or the exported value re-enables it (a cafe watching
-  charging docks would want exactly that), and the Watching page shows
-  "battery-powered host" as the source instead of a blank.
+  An earlier attempt at this suppressed the default on hosts reporting both a
+  battery and a filesystem, reasoning that no UPS or PDU has a filesystem.
+  True, and irrelevant: a **server wired to a UPS** reports that UPS's battery
+  and runtime through its own agent, next to its own disks, and is
+  byte-for-byte a laptop in the feed. Three Proxmox hosts on a real fleet did
+  exactly that, and the suppression would have silenced the alarm they exist
+  to raise. Guessing wrong in that direction fails silently on a genuine
+  outage; the noise it was removing is at least visible.
+
+  So the classifier stayed and the decision went. `state` alerts everywhere as
+  before, and the Watching page marks those hosts "laptop or UPS-backed?" with
+  the mute control beside them - one click per laptop, and no server can go
+  quiet by inference.
 
 - **Temperature no longer has a default threshold.** It shipped at warn 45 /
   crit 55 C, which is a UPS-battery or switch-inlet number - on a small-form-

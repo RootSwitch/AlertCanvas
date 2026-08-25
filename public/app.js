@@ -444,15 +444,22 @@
     // ===== watching =====
     // The dry-run view: every value in the feed, the rule that would fire on
     // it (and where that rule came from), and how the current reading scores.
-    function ruleText(rule, unit, lowerIsBad, source, muted) {
-        if (muted) return '<span class="muted">muted</span>';
-        if (!rule) return '<span class="muted">no rule</span>';
+    // batteryHost: this host reports a battery AND a filesystem, so it is
+    // either a laptop (on battery is normal, mute it) or a server wired to a
+    // UPS (on battery is an outage, leave it). Nothing in the feed separates
+    // those, so the row says so and the operator decides - the mute button is
+    // right beside it.
+    const BATTERY_HINT = '<span class="badge" title="This host reports both a battery and a filesystem. If it is a laptop or handheld, on battery is normal and this rule is worth muting. If it is a server on a UPS, leave it - on battery is the outage.">laptop or UPS-backed?</span>';
+    function ruleText(rule, unit, lowerIsBad, source, muted, batteryHost) {
+        const hint = batteryHost ? ' ' + BATTERY_HINT : '';
+        if (muted) return '<span class="muted">muted</span>' + hint;
+        if (!rule) return '<span class="muted">no rule</span>' + hint;
         const dir = lowerIsBad ? '<=' : '>=';
         const parts = [];
         if (rule.warn != null) parts.push(`warn ${dir} ${rule.warn}${unit}`);
         if (rule.crit != null) parts.push(`crit ${dir} ${rule.crit}${unit}`);
         return esc(parts.join(', ')) +
-            (source !== 'default' ? ` <span class="muted small">(${esc(source)})</span>` : '');
+            (source !== 'default' ? ` <span class="muted small">(${esc(source)})</span>` : '') + hint;
     }
     function stateBadge(current, muted) {
         if (muted) return '<span class="badge">muted</span>';
@@ -627,7 +634,7 @@
                 <td>${esc(m.host)}</td>
                 <td>${esc(m.display)}${codeChip(m.code)}</td>
                 <td class="hide-sm">${esc(m.kind)}</td>
-                <td>${ruleText(m.rule, m.unit, m.lowerIsBad, m.source, m.muted)}</td>
+                <td>${ruleText(m.rule, m.unit, m.lowerIsBad, m.source, m.muted, m.batteryHost)}</td>
                 <td>${stateBadge(m.current, m.muted)}</td>
                 <td>${muteBtn(m.code, m.kind, m.muted, m.muted && m.source === 'host override')}</td>
             </tr>`).join('');
