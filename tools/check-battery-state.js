@@ -33,25 +33,25 @@ const M = (host, kind, value, code) => ({ host, kind, code: code || `${host}-${k
 
 // A handheld: its own battery, its own disk, unplugged.
 const handheld = [
-    M('AllyX', 'battery', 70), M('AllyX', 'runtime', 25740), M('AllyX', 'state', 1),
-    M('AllyX', 'cpu', 2), M('AllyX', 'mem', 40), M('AllyX', 'disk', 77)
+    M('handheld-1', 'battery', 70), M('handheld-1', 'runtime', 25740), M('handheld-1', 'state', 1),
+    M('handheld-1', 'cpu', 2), M('handheld-1', 'mem', 40), M('handheld-1', 'disk', 77)
 ];
 // A UPS: battery and runtime, no operating system anywhere.
 const ups = [
-    M('SRT2200', 'battery', 100), M('SRT2200', 'runtime', 1800), M('SRT2200', 'state', 1),
-    M('SRT2200', 'util', 22)
+    M('ups-1', 'battery', 100), M('ups-1', 'runtime', 1800), M('ups-1', 'state', 1),
+    M('ups-1', 'util', 22)
 ];
 // A switch: cpu and memory, a state sensor for a PSU or fan alarm, no battery.
 const sw = [
-    M('CRS317', 'cpu', 9), M('CRS317', 'mem', 40), M('CRS317', 'state', 1)
+    M('sw-1', 'cpu', 9), M('sw-1', 'mem', 40), M('sw-1', 'state', 1)
 ];
 // THE COUNTEREXAMPLE. A Proxmox host reporting its APC through its own agent:
 // the UPS's battery and runtime, and the server's own cpu, memory and disks.
 // Indistinguishable from the handheld above by shape alone, and the opposite
 // thing entirely when it says "on battery".
 const upsBackedServer = [
-    M('MPC1', 'battery', 100), M('MPC1', 'runtime', 7680), M('MPC1', 'state', 1),
-    M('MPC1', 'cpu', 14), M('MPC1', 'mem', 61), M('MPC1', 'disk', 44)
+    M('srv-1', 'battery', 100), M('srv-1', 'runtime', 7680), M('srv-1', 'state', 1),
+    M('srv-1', 'cpu', 14), M('srv-1', 'mem', 61), M('srv-1', 'disk', 44)
 ];
 
 const config = (extra = {}) => ({
@@ -69,45 +69,45 @@ const sev = (metrics, host, cfg) => {
 // --- THE INVARIANT: a state sensor is never silenced by inference ----------
 // Every one of these is a device somebody would be furious to miss.
 test('a UPS on battery crits', () => {
-    assert.strictEqual(sev(ups, 'SRT2200'), 'crit');
+    assert.strictEqual(sev(ups, 'ups-1'), 'crit');
 });
 test('a UPS-BACKED SERVER on battery crits - the case that killed the guess', () => {
-    assert.strictEqual(sev(upsBackedServer, 'MPC1'), 'crit');
+    assert.strictEqual(sev(upsBackedServer, 'srv-1'), 'crit');
 });
 test("a switch's fault state crits", () => {
-    assert.strictEqual(sev(sw, 'CRS317'), 'crit');
+    assert.strictEqual(sev(sw, 'sw-1'), 'crit');
 });
 test('and so does a laptop, because the app cannot tell it from the server', () => {
-    assert.strictEqual(sev(handheld, 'AllyX'), 'crit');
+    assert.strictEqual(sev(handheld, 'handheld-1'), 'crit');
 });
 test('one feed carrying all four silences none of them', () => {
     const all = handheld.concat(ups, sw, upsBackedServer);
-    for (const h of ['AllyX', 'SRT2200', 'CRS317', 'MPC1']) {
+    for (const h of ['handheld-1', 'ups-1', 'sw-1', 'srv-1']) {
         assert.strictEqual(sev(all, h), 'crit', `${h} went quiet`);
     }
 });
 
 // --- the operator's lever still works -------------------------------------
 test('a host override mutes the laptop, which is how the noise goes away', () => {
-    const cfg = config({ overrides: [{ scope: 'host-kind', code: null, host: 'AllyX', kind: 'state', warn: null, crit: null, severity: null, enabled: 0 }] });
-    assert.strictEqual(sev(handheld, 'AllyX', cfg), 'no-condition');
+    const cfg = config({ overrides: [{ scope: 'host-kind', code: null, host: 'handheld-1', kind: 'state', warn: null, crit: null, severity: null, enabled: 0 }] });
+    assert.strictEqual(sev(handheld, 'handheld-1', cfg), 'no-condition');
 });
 test('...and muting the laptop does not touch the server', () => {
-    const cfg = config({ overrides: [{ scope: 'host-kind', code: null, host: 'AllyX', kind: 'state', warn: null, crit: null, severity: null, enabled: 0 }] });
-    assert.strictEqual(sev(handheld.concat(upsBackedServer), 'MPC1', cfg), 'crit');
+    const cfg = config({ overrides: [{ scope: 'host-kind', code: null, host: 'handheld-1', kind: 'state', warn: null, crit: null, severity: null, enabled: 0 }] });
+    assert.strictEqual(sev(handheld.concat(upsBackedServer), 'srv-1', cfg), 'crit');
 });
 
 // --- the hint: information only -------------------------------------------
 test('the hint marks a battery-plus-disk host', () => {
-    const row = rules.explain({ metrics: handheld }, config()).metrics.find((r) => r.code === 'AllyX-state');
+    const row = rules.explain({ metrics: handheld }, config()).metrics.find((r) => r.code === 'handheld-1-state');
     assert.strictEqual(row.batteryHost, true);
 });
 test('...and marks the UPS-backed server too, because it cannot tell', () => {
-    const row = rules.explain({ metrics: upsBackedServer }, config()).metrics.find((r) => r.code === 'MPC1-state');
+    const row = rules.explain({ metrics: upsBackedServer }, config()).metrics.find((r) => r.code === 'srv-1-state');
     assert.strictEqual(row.batteryHost, true, 'the hint is honest about its own ambiguity');
 });
 test('a real UPS is not marked - no filesystem', () => {
-    const row = rules.explain({ metrics: ups }, config()).metrics.find((r) => r.code === 'SRT2200-state');
+    const row = rules.explain({ metrics: ups }, config()).metrics.find((r) => r.code === 'ups-1-state');
     assert.strictEqual(row.batteryHost, undefined);
 });
 test('the hint never appears on a kind other than state', () => {
@@ -117,17 +117,17 @@ test('the hint never appears on a kind other than state', () => {
     }
 });
 test('the hint does not change the rule it sits beside', () => {
-    const row = rules.explain({ metrics: handheld }, config()).metrics.find((r) => r.code === 'AllyX-state');
+    const row = rules.explain({ metrics: handheld }, config()).metrics.find((r) => r.code === 'handheld-1-state');
     assert.deepStrictEqual(row.rule, { warn: null, crit: 1 });
     assert.strictEqual(row.source, 'default');
 });
 
 // --- the classifier itself -------------------------------------------------
 test('battery AND disk is the shape it detects', () => {
-    assert.ok(rules.batteryPoweredHosts(handheld).has('AllyX'));
-    assert.ok(rules.batteryPoweredHosts(upsBackedServer).has('MPC1'));
-    assert.ok(!rules.batteryPoweredHosts(ups).has('SRT2200'));
-    assert.ok(!rules.batteryPoweredHosts(sw).has('CRS317'));
+    assert.ok(rules.batteryPoweredHosts(handheld).has('handheld-1'));
+    assert.ok(rules.batteryPoweredHosts(upsBackedServer).has('srv-1'));
+    assert.ok(!rules.batteryPoweredHosts(ups).has('ups-1'));
+    assert.ok(!rules.batteryPoweredHosts(sw).has('sw-1'));
 });
 test('one of the two is not enough', () => {
     assert.ok(!rules.batteryPoweredHosts([M('x', 'battery', 50)]).has('x'));
